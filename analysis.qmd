@@ -57,7 +57,7 @@ range(intakes_old$intake_date)
 intakes_old |> count(year = year(intake_date))
 ```
 
-## Prepare outcomes
+## Prepare outcomes 
 
 ```{r}
 outcomes_all <- outcomes_old_clean |>
@@ -70,3 +70,44 @@ outcomes_all |> count(outcome_type, sort = TRUE)
 max(intakes_old$intake_date)
 max(outcomes_all$outcome_date)
 ```
+
+## Build the stays table
+
+```{r}
+# Step 1: pair each intake with its next outcome
+matched <- intakes_old |>
+  select(intake_id, animal_id, intake_date) |>
+  inner_join(outcomes_all, by = "animal_id", relationship = "many-to-many") |>
+  filter(outcome_date >= intake_date) |>
+  group_by(intake_id) |>
+  slice_min(outcome_date, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  select(intake_id, outcome_date, outcome_type)
+
+# Step 2: add those outcomes back onto every intake
+data_cutoff <- as_date("2025-05-05")
+
+stays <- intakes_old |>
+  left_join(matched, by = "intake_id") |>
+  mutate(still_in_shelter = is.na(outcome_date),
+         end_date = coalesce(outcome_date, data_cutoff),
+         los_days = as.numeric(end_date - intake_date))
+```
+
+## Sanity check
+
+```{r}
+stays |>
+  count(still_in_shelter)
+
+stays |>
+  summarise(n = n(),
+            negative_stays = sum(los_days < 0),
+            median_los = median(los_days))
+
+stays |> arrange(desc(los_days)) |>
+  select(animal_id,
+         intake_date,
+         outcome_date,
+         los_days)
+  ```
