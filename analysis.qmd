@@ -23,4 +23,50 @@ outcomes_new <- read_csv("data/Outcomes_20261114.csv") |> clean_names()
 
 glimpse(intakes_old)
 glimpse(outcomes_old)
+glimpse(intakes_new)
+glimpse(outcomes_new)
+```
+
+## Prepare dates
+
+```{r}
+to_date <- function(x) {
+  if (inherits(x, c("Date", "POSIXt"))) {
+    as_date(x)
+  } else {
+    as_date(parse_date_time(x, orders = c("YbdIMSp",
+                                          "YmdHMS",
+                                          "Ymd",
+                                          "mdYIMSp")))
+  }
+}
+
+intakes_old <- intakes_old |>
+  mutate(intake_id = row_number(),
+         intake_date = to_date(date_time))
+
+outcomes_old_clean <- outcomes_old |>
+  transmute(animal_id,
+            outcome_date = to_date(date_time),
+            outcome_type)
+
+sum(is.na(intakes_old$intake_date))
+sum(is.na(outcomes_old_clean$outcome_date))
+range(intakes_old$intake_date)
+
+intakes_old |> count(year = year(intake_date))
+```
+
+## Prepare outcomes
+
+```{r}
+outcomes_all <- outcomes_old_clean |>
+  mutate(outcome_type = str_to_lower(outcome_type)) |>
+  distinct()
+
+outcomes_all |> count(outcome_type, sort = TRUE)
+
+# Confirm where each old file ends
+max(intakes_old$intake_date)
+max(outcomes_all$outcome_date)
 ```
