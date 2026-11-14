@@ -1,0 +1,26 @@
+---
+title: "Austin Shelter Survival Analysis"
+subtitle: "What affects how long animals stay before adoption?"
+format: 
+    html:
+        embed-resources: true
+        toc: true
+execute:
+    warning: false
+---
+
+## Load data
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+
+intakes_old <- read_csv("data/Intakes_2013_to_2025.csv") |> clean_names()
+intakes_new <- read_csv("data/Intakes_20261114.csv") |> clean_names()
+outcomes_old <- read_csv("data/Outcomes_2013_to_2025.csv") |> clean_names()
+outcomes_new <- read_csv("data/Outcomes_20261114.csv") |> clean_names()
+
+glimpse(intakes_old)
+glimpse(outcomes_old)
+```
