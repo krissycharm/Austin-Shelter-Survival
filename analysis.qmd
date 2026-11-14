@@ -110,4 +110,54 @@ stays |> arrange(desc(los_days)) |>
          intake_date,
          outcome_date,
          los_days)
-  ```
+```
+
+## Investigate unmatched stays
+
+```{r}
+# 1. How long ago did the unmatched animals arrive?
+stays |>
+  filter(still_in_shelter) |>
+  mutate(wait_group = case_when(
+    los_days <= 30  ~ "30 days or less",
+    los_days <= 365 ~ "31 to 365 days",
+    TRUE            ~ "over a year")) |>
+  count(wait_group)
+
+# 2. What kinds of animals are they?
+stays |>
+  filter(still_in_shelter) |>
+  count(animal_type, sort = TRUE)
+
+# 3. How common are very long stays among matched animals?
+stays |>
+  filter(!still_in_shelter) |>
+  summarise(over_90_days = sum(los_days > 90),
+            share_over_90 = mean(los_days > 90),
+            over_1_year = sum(los_days > 365))
+```
+
+## Clean data and group outcomes
+
+```{r}
+stays_clean <- stays |>
+  filter(animal_type %in% c("Dog", "Cat")) |>
+  filter(!(still_in_shelter & los_days > 365)) |>
+  mutate(outcome_group = case_when(still_in_shelter ~ "Still in shelter",
+                                   is.na(outcome_type) ~ "Unknown outcome",
+                                   outcome_type == "adoption" ~ "Adopted",
+                                   outcome_type %in% c("return to owner",
+                                          "rto-adopt") ~ "Returned to owner",
+                                   outcome_type == "transfer" ~ "Transferred",
+                                   outcome_type == "euthanasia" ~ "Euthanized",
+                                   TRUE ~ "Other outcome"))
+
+nrow(stays_clean)
+stays_clean |>
+  count(outcome_group, sort = TRUE)
+stays_clean |>
+  count(animal_type, outcome_group) |>
+  arrange(animal_type, desc(n))
+```
+
+  
