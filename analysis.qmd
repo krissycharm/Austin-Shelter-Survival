@@ -11,6 +11,7 @@ format:
     code-fold: true
     code-summary: "Show code"
     theme: cosmo
+    df-print: kable
 execute:
   warning: false
   message: false
@@ -182,7 +183,31 @@ stays_clean <- stays_clean |>
 
     # When did it arrive?
     intake_year  = year(intake_date),
-    intake_month = month(intake_date, label = TRUE)
+    intake_month = month(intake_date, label = TRUE),
+
+    # Group the 20 arrival conditions into a handful of meaningful groups
+    condition_group = case_when(
+      intake_condition == "Normal"  ~ "Normal",
+      intake_condition == "Injured" ~ "Injured",
+      intake_condition %in% c("Sick", "Medical", "Med Attn", "Med Urgent",
+                              "Neurologic", "Parvo", "Panleuk", "Congenital",
+                              "Agonal")           ~ "Sick or medical",
+      intake_condition %in% c("Neonatal", "Nursing") ~ "Neonatal or nursing",
+      intake_condition %in% c("Behavior", "Feral")   ~ "Behavior or feral",
+      intake_condition == "Aged"     ~ "Aged",
+      intake_condition == "Pregnant" ~ "Pregnant",
+      TRUE                           ~ "Other or unknown"
+    ),
+    condition_group = factor(condition_group,
+                             levels = c("Normal", "Injured", "Sick or medical",
+                                        "Neonatal or nursing", "Aged", "Pregnant",
+                                        "Behavior or feral", "Other or unknown")),
+
+    # Age groups, using the age in days from earlier
+    age_group = cut(age_days,
+                    breaks = c(-Inf, 56, 365, 365 * 5, Inf),
+                    labels = c("Under 8 weeks", "8 weeks to 1 year",
+                               "1 to 5 years", "Over 5 years"))
   )
 ```
 
@@ -244,6 +269,24 @@ stays_clean |>
 ```
 
 Intakes dropped sharply in 2020, during the COVID-19 pandemic, and have stayed well below 2019 levels. Because of this, the analysis will check whether results differ across time periods.
+
+### Who is most at risk?
+
+```{r}
+#| echo: false
+#| fig-cap: "Share of stays that ended in death or euthanasia, by condition on arrival"
+
+stays_clean |>
+  filter(outcome_group != "Unknown outcome") |>
+  group_by(condition_group) |>
+  summarise(share = mean(outcome_group == "Died or euthanized"),
+            n = n()) |>
+  ggplot(aes(x = share, y = reorder(condition_group, share))) +
+  geom_col() +
+  scale_x_continuous(labels = scales::percent) +
+  labs(x = "Share ending in death or euthanasia", y = NULL) +
+  theme_minimal()
+```
 
 ## Survival analysis
 
@@ -373,4 +416,7 @@ stays_clean |> count(has_own_name)
 # Categories still to be grouped
 stays_clean |> count(intake_type, sort = TRUE)
 stays_clean |> count(intake_condition, sort = TRUE)
+
+stays_clean |> count(condition_group)
+stays_clean |> count(age_group)
 ```
