@@ -5,13 +5,22 @@ author: "Kristina Diaz-Kerkado"
 date: today
 format:
   html:
+    theme: [flatly, custom.scss]
     embed-resources: true
     toc: true
     toc-depth: 2
+    toc-title: "Contents"
+    toc-location: left
     code-fold: true
     code-summary: "Show code"
-    theme: cosmo
+    code-block-bg: true
+    code-block-border-left: "#2F6F6A"
     df-print: kable
+    fig-align: center
+    fig-width: 8
+    fig-height: 4.5
+    fig-dpi: 150
+    smooth-scroll: true
 execute:
   warning: false
   message: false
@@ -29,18 +38,37 @@ intakes_old  <- read_csv("data/Intakes_2013_to_2025.csv")  |> clean_names()
 intakes_new  <- read_csv("data/Intakes_20261114.csv")      |> clean_names()
 outcomes_old <- read_csv("data/Outcomes_2013_to_2025.csv") |> clean_names()
 outcomes_new <- read_csv("data/Outcomes_20261114.csv")     |> clean_names()
+
+# ---- Look and feel for every chart ----
+species_colors <- c(Dog = "#2F6F6A", Cat = "#E08E45")
+
+theme_set(
+  theme_minimal(base_size = 13) +
+    theme(
+      plot.title.position = "plot",
+      plot.title    = element_text(face = "bold", size = 16),
+      plot.subtitle = element_text(colour = "grey35", margin = margin(b = 10)),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(colour = "grey90"),
+      axis.title = element_text(colour = "grey30"),
+      legend.position = "top",
+      legend.justification = "left"
+    )
+)
 ```
 
 ## Summary
 
+::: {.callout-note appearance="simple"}
 **Question.** Which characteristics of a shelter animal, and which conditions it arrives in, affect how long it stays at the Austin Animal Center? Can we flag the animals most likely to wait longest, or to have a poor outcome, early enough for the shelter to help?
 
 **Data.** More than 160,000 dog and cat stays from October 2013 to May 2025, from the City of Austin Open Data Portal.
 
-**Early findings.** Dogs and cats leave the shelter in different ways. Roughly half of both are adopted, but about one in four dogs is reclaimed by an owner (versus about one in twenty cats), while more than a third of cats are transferred to other organizations (versus about one in five dogs).
+**Early findings.** Dogs and cats leave the shelter in different ways. Roughly half of both are adopted, but about one in four dogs is reclaimed by an owner (versus about one in twenty cats), while more than a third of cats are transferred to other organizations (versus about one in five dogs). Arrival condition matters a great deal: about 20% of injured animals and 17% of sick animals died or were euthanized, compared with under 2% of animals that arrived in normal condition.
 
 **Still to come.** Survival curves showing how long different groups of animals wait, a model of which factors matter most, and a test of whether animals at high risk can be flagged at intake.
 
+:::
 <!-- Update this summary once the survival analysis is finished. -->
 
 ## Why this matters
@@ -71,7 +99,9 @@ tibble(
 
 Each row in the intake file is one arrival. To measure how long an animal stayed, I matched each arrival to that animal's **next** departure from the outcomes file, then calculated the days in between. The code for each step is available under "Show code."
 
-### Dates
+### Dates and outcomes
+
+The files store dates in different formats, so I converted them all to plain dates. I also lowercased the outcome labels so that, for example, "Adoption" and "adoption" count as the same thing.
 
 ```{r}
 #| include: false
@@ -98,7 +128,7 @@ outcomes_old_clean <- outcomes_old |>
             outcome_type)
 ```
 
-### Outcomes
+
 
 ```{r}
 # Lowercase outcome labels so "Adoption" and "adoption" count as the same thing
@@ -234,7 +264,7 @@ Dogs and cats leave the shelter in different ways, which matters for any questio
 
 ```{r}
 #| echo: false
-#| fig-cap: "How stays end for dogs and cats (share of each species' stays)"
+#| fig-cap: "Source: Austin Animal Center, Oct 2013 to May 2025."
 
 stays_clean |>
   filter(outcome_group != "Unknown outcome") |>
@@ -243,10 +273,16 @@ stays_clean |>
   mutate(share = n / sum(n)) |>
   ungroup() |>
   ggplot(aes(x = share, y = reorder(outcome_group, share), fill = animal_type)) +
-  geom_col(position = "dodge") +
-  scale_x_continuous(labels = scales::percent) +
-  labs(x = "Share of each species' stays", y = NULL, fill = NULL) +
-  theme_minimal()
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = scales::percent(share, accuracy = 1)),
+            position = position_dodge(width = 0.8), hjust = -0.15, size = 3.5) +
+  scale_x_continuous(labels = scales::percent,
+                     expand = expansion(mult = c(0, 0.15))) +
+  scale_fill_manual(values = species_colors) +
+  labs(title = "How stays end for dogs and cats",
+       subtitle = "Share of each species' stays",
+       x = NULL, y = NULL, fill = NULL) +
+  guides(fill = guide_legend(reverse = TRUE))
 ```
 
 Roughly half of both species are adopted. Dogs are far more likely to be reclaimed by an owner, often within days, while cats are far more likely to be transferred to rescue partners and other shelters.
@@ -255,38 +291,60 @@ Roughly half of both species are adopted. Dogs are far more likely to be reclaim
 
 ```{r}
 #| echo: false
-#| fig-cap: "Dog and cat intakes per year (2013 and 2025 left out because the data covers only part of those years)"
+#| fig-cap: "2013 and 2025 are left out because the data covers only part of those years. Source: Austin Animal Center."
 
 stays_clean |>
   filter(intake_year %in% 2014:2024) |>
   count(intake_year) |>
   ggplot(aes(x = intake_year, y = n)) +
-  geom_col() +
+  geom_col(fill = "#2F6F6A", width = 0.75) +
+  geom_text(aes(label = scales::comma(n)), vjust = -0.5, size = 3) +
   scale_x_continuous(breaks = 2014:2024) +
-  scale_y_continuous(labels = scales::comma) +
-  labs(x = NULL, y = "Intakes") +
-  theme_minimal()
+  scale_y_continuous(labels = scales::comma,
+                     expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Intakes fell sharply in 2020 and stayed lower",
+       subtitle = "Dog and cat intakes per year, 2014 to 2024",
+       x = NULL, y = NULL)
 ```
 
 Intakes dropped sharply in 2020, during the COVID-19 pandemic, and have stayed well below 2019 levels. Because of this, the analysis will check whether results differ across time periods.
+
+### Condition on arrival
+
+Animals arrive in very different states. Most are in normal condition, but a meaningful minority arrive injured, sick, or too young to eat on their own.
+
+```{r}
+#| echo: false
+
+stays_clean |>
+  count(condition_group, name = "stays") |>
+  mutate(share = scales::percent(stays / sum(stays), accuracy = 0.1)) |>
+  knitr::kable(col.names = c("Condition on arrival", "Stays", "Share of all stays"),
+               align = c("l", "r", "r"),
+               format.args = list(big.mark = ","))
+```
 
 ### Who is most at risk?
 
 ```{r}
 #| echo: false
-#| fig-cap: "Share of stays that ended in death or euthanasia, by condition on arrival"
+#| fig-cap: "Source: Austin Animal Center, Oct 2013 to May 2025."
 
 stays_clean |>
   filter(outcome_group != "Unknown outcome") |>
   group_by(condition_group) |>
-  summarise(share = mean(outcome_group == "Died or euthanized"),
-            n = n()) |>
+  summarise(share = mean(outcome_group == "Died or euthanized")) |>
   ggplot(aes(x = share, y = reorder(condition_group, share))) +
-  geom_col() +
-  scale_x_continuous(labels = scales::percent) +
-  labs(x = "Share ending in death or euthanasia", y = NULL) +
-  theme_minimal()
+  geom_col(fill = "#B5483A", width = 0.7) +
+  geom_text(aes(label = scales::percent(share, accuracy = 0.1)),
+            hjust = -0.15, size = 3.5) +
+  scale_x_continuous(labels = scales::percent,
+                     expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Who is most at risk?",
+       subtitle = "Share of stays ending in death or euthanasia, by condition on arrival",
+       x = NULL, y = NULL)
 ```
+Injured and sick animals are far more likely to die or be euthanized: about 20% and 17% of their stays end that way, compared with under 2% for animals that arrive in normal condition. The "Pregnant" and "Behavior or feral" groups are small (170 and 225 stays), so their percentages are less reliable.
 
 ## Survival analysis
 
