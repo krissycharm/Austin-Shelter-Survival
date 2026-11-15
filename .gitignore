@@ -2,4 +2,8 @@ data/
 .Rhistory
 .RData
 .vdoc.*
-Rproj.user/
+.quarto/
+*.html
+*_files/
+*.pdf
+.Rproj.user/

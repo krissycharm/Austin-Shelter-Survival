@@ -1,35 +1,81 @@
 ---
-title: "Austin Shelter Survival Analysis"
-subtitle: "What affects how long animals stay before adoption?"
-format: 
-    html:
-        embed-resources: true
-        toc: true
+title: "Which Shelter Animals Wait Longest?"
+subtitle: "A survival analysis of 11 years of Austin Animal Center data"
+author: "Kristina Diaz-Kerkado"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    code-fold: true
+    code-summary: "Show code"
+    theme: cosmo
 execute:
-    warning: false
+  warning: false
+  message: false
 ---
 
-## Load data
-
 ```{r}
+#| include: false
+
+# Setup: load packages and the four data files )
 library(tidyverse)
 library(janitor)
 library(lubridate)
 
-intakes_old <- read_csv("data/Intakes_2013_to_2025.csv") |> clean_names()
-intakes_new <- read_csv("data/Intakes_20261114.csv") |> clean_names()
+intakes_old  <- read_csv("data/Intakes_2013_to_2025.csv")  |> clean_names()
+intakes_new  <- read_csv("data/Intakes_20261114.csv")      |> clean_names()
 outcomes_old <- read_csv("data/Outcomes_2013_to_2025.csv") |> clean_names()
-outcomes_new <- read_csv("data/Outcomes_20261114.csv") |> clean_names()
-
-glimpse(intakes_old)
-glimpse(outcomes_old)
-glimpse(intakes_new)
-glimpse(outcomes_new)
+outcomes_new <- read_csv("data/Outcomes_20261114.csv")     |> clean_names()
 ```
 
-## Prepare dates
+## Summary
+
+**Question.** Which characteristics of a shelter animal, and which conditions it arrives in, affect how long it stays at the Austin Animal Center? Can we flag the animals most likely to wait longest, or to have a poor outcome, early enough for the shelter to help?
+
+**Data.** More than 160,000 dog and cat stays from October 2013 to May 2025, from the City of Austin Open Data Portal.
+
+**Early findings.** Dogs and cats leave the shelter in different ways. Roughly half of both are adopted, but about one in four dogs is reclaimed by an owner (versus about one in twenty cats), while more than a third of cats are transferred to other organizations (versus about one in five dogs).
+
+**Still to come.** Survival curves showing how long different groups of animals wait, a model of which factors matter most, and a test of whether animals at high risk can be flagged at intake.
+
+<!-- Update this summary once the survival analysis is finished. -->
+
+## Why this matters
+
+Shelters have limited kennel space, staff time, and money. Every extra day an animal stays costs resources and can affect its health and behavior. If a shelter can tell at intake which animals are likely to wait longest or have a poor outcome, it can direct foster care, medical treatment, behavior support, and adoption marketing to those animals sooner.
+
+## The data
+
+Austin Animal Center publishes two datasets on the City of Austin Open Data Portal: **intakes** (animals arriving) and **outcomes** (animals leaving). Each exists in two formats. In May 2025 the published format changed, with different columns and a different animal ID format, so the two periods cannot simply be stacked together.
+
+The main analysis uses the **2013 to May 2025** files. The newer files are set aside to test later how well the results hold up on animals the analysis has not seen.
 
 ```{r}
+#| echo: false
+
+tibble(
+  Dataset = c("Intakes (old format)", "Outcomes (old format)",
+              "Intakes (new format)", "Outcomes (new format)"),
+  Period  = c("Oct 2013 to May 2025", "Oct 2013 to May 2025",
+              "May 2025 to Nov 2026", "May 2025 to Nov 2026"),
+  Rows    = c(nrow(intakes_old), nrow(outcomes_old),
+              nrow(intakes_new), nrow(outcomes_new))
+) |>
+  knitr::kable(format.args = list(big.mark = ","))
+```
+
+## Preparing the data
+
+Each row in the intake file is one arrival. To measure how long an animal stayed, I matched each arrival to that animal's **next** departure from the outcomes file, then calculated the days in between. The code for each step is available under "Show code."
+
+### Dates
+
+```{r}
+#| include: false
+
+# Helper: turn dates stored as text, dates, or date-times into plain dates
 to_date <- function(x) {
   if (inherits(x, c("Date", "POSIXt"))) {
     as_date(x)
@@ -49,43 +95,32 @@ outcomes_old_clean <- outcomes_old |>
   transmute(animal_id,
             outcome_date = to_date(date_time),
             outcome_type)
-
-sum(is.na(intakes_old$intake_date))
-sum(is.na(outcomes_old_clean$outcome_date))
-range(intakes_old$intake_date)
-
-intakes_old |> count(year = year(intake_date))
 ```
 
-## Prepare outcomes 
+### Outcomes
 
 ```{r}
+# Lowercase outcome labels so "Adoption" and "adoption" count as the same thing
 outcomes_all <- outcomes_old_clean |>
   mutate(outcome_type = str_to_lower(outcome_type)) |>
   distinct()
-
-outcomes_all |> count(outcome_type, sort = TRUE)
-
-# Confirm where each old file ends
-max(intakes_old$intake_date)
-max(outcomes_all$outcome_date)
 ```
 
-## Build the stays table
+### One row per stay
 
 ```{r}
 # Step 1: pair each intake with its next outcome
 matched <- intakes_old |>
   select(intake_id, animal_id, intake_date) |>
   inner_join(outcomes_all, by = "animal_id", relationship = "many-to-many") |>
-  filter(outcome_date >= intake_date) |>
+  filter(outcome_date >= intake_date) |>   # keep outcomes on or after arrival
   group_by(intake_id) |>
-  slice_min(outcome_date, n = 1, with_ties = FALSE) |>
+  slice_min(outcome_date, n = 1, with_ties = FALSE) |>   # earliest one ends the stay
   ungroup() |>
   select(intake_id, outcome_date, outcome_type)
 
 # Step 2: add those outcomes back onto every intake
-data_cutoff <- as_date("2025-05-05")
+data_cutoff <- as_date("2025-05-05")   # where the old files end
 
 stays <- intakes_old |>
   left_join(matched, by = "intake_id") |>
@@ -94,7 +129,177 @@ stays <- intakes_old |>
          los_days = as.numeric(end_date - intake_date))
 ```
 
-## Sanity check
+### Dogs and cats, and grouped outcomes
+
+```{r}
+stays_clean <- stays |>
+  filter(animal_type %in% c("Dog", "Cat")) |>
+  filter(!intake_type %in% c("Euthanasia Request", "Wildlife")) |>
+  filter(!(still_in_shelter & los_days > 365)) |>
+  mutate(outcome_group = case_when(
+    still_in_shelter                                    ~ "Still in shelter",
+    is.na(outcome_type)                                 ~ "Unknown outcome",
+    outcome_type == "adoption"                          ~ "Adopted",
+    outcome_type %in% c("return to owner", "rto-adopt") ~ "Returned to owner",
+    outcome_type == "transfer"                          ~ "Transferred",
+    outcome_type %in% c("euthanasia", "died")           ~ "Died or euthanized",
+    TRUE                                                ~ "Other outcome"
+  ))
+```
+
+### Features known at intake
+
+The analysis only uses information the shelter has when an animal arrives, because the goal is to flag animals at the door.
+
+```{r}
+stays_clean <- stays_clean |>
+  mutate(
+    # Age: turn text like "2 years" or "3 weeks" into a number of days
+    age_number = parse_number(age_upon_intake),
+    age_days = case_when(
+      str_detect(age_upon_intake, "year")  ~ age_number * 365,
+      str_detect(age_upon_intake, "month") ~ age_number * 30,
+      str_detect(age_upon_intake, "week")  ~ age_number * 7,
+      str_detect(age_upon_intake, "day")   ~ age_number,
+      TRUE                                 ~ NA_real_
+    ),
+    age_days = if_else(age_days < 0, NA_real_, age_days),
+
+    # Sex and spay/neuter status, split out of one combined column
+    sex = case_when(
+      str_detect(sex_upon_intake, "Female") ~ "female",
+      str_detect(sex_upon_intake, "Male")   ~ "male",
+      TRUE                                  ~ "unknown"
+    ),
+    fixed = case_when(
+      str_detect(sex_upon_intake, "Neutered|Spayed") ~ "fixed",
+      str_detect(sex_upon_intake, "Intact")          ~ "intact",
+      TRUE                                           ~ "unknown"
+    ),
+
+    # Did the animal arrive with its own name? (names starting with * were given by the shelter)
+    has_own_name = !is.na(name) & !str_detect(name, fixed("*")),
+
+    # When did it arrive?
+    intake_year  = year(intake_date),
+    intake_month = month(intake_date, label = TRUE)
+  )
+```
+
+### Decisions I made
+
+| Decision | Why |
+|---|---|
+| Dogs and cats only | Wildlife, birds, and other species have very different outcomes |
+| Each intake matched to the animal's next outcome | Animals can enter the shelter more than once |
+| Animals with no recorded outcome kept as "still in shelter" as of 5 May 2025 | We know they waited at least that long (called "censoring") |
+| Stays with no outcome that lasted over a year removed | Almost certainly missing records, not real stays |
+| Owner-requested euthanasia and wildlife intakes removed | Those animals were never available for adoption |
+| Died and euthanized grouped together | Both are non-live outcomes, and most deaths happened in the shelter's care |
+| "rto-adopt" counted as returned to owner | An assumption: an owner reclaiming an animal |
+| Only information known at intake used as predictors | The goal is to flag animals when they arrive |
+
+After these steps the analysis covers `r format(nrow(stays_clean), big.mark = ",")` stays: `r format(sum(stays_clean$animal_type == "Dog"), big.mark = ",")` dogs and `r format(sum(stays_clean$animal_type == "Cat"), big.mark = ",")` cats. Of these, `r format(sum(stays_clean$still_in_shelter), big.mark = ",")` had not yet left the shelter when the data ended.
+
+## Exploring the data
+
+### How stays end
+
+Dogs and cats leave the shelter in different ways, which matters for any question about "time to adoption." An animal that is reclaimed by its owner or transferred to another organization can no longer be adopted from this shelter.
+
+```{r}
+#| echo: false
+#| fig-cap: "How stays end for dogs and cats (share of each species' stays)"
+
+stays_clean |>
+  filter(outcome_group != "Unknown outcome") |>
+  count(animal_type, outcome_group) |>
+  group_by(animal_type) |>
+  mutate(share = n / sum(n)) |>
+  ungroup() |>
+  ggplot(aes(x = share, y = reorder(outcome_group, share), fill = animal_type)) +
+  geom_col(position = "dodge") +
+  scale_x_continuous(labels = scales::percent) +
+  labs(x = "Share of each species' stays", y = NULL, fill = NULL) +
+  theme_minimal()
+```
+
+Roughly half of both species are adopted. Dogs are far more likely to be reclaimed by an owner, often within days, while cats are far more likely to be transferred to rescue partners and other shelters.
+
+### Intakes over time
+
+```{r}
+#| echo: false
+#| fig-cap: "Dog and cat intakes per year (2013 and 2025 left out because the data covers only part of those years)"
+
+stays_clean |>
+  filter(intake_year %in% 2014:2024) |>
+  count(intake_year) |>
+  ggplot(aes(x = intake_year, y = n)) +
+  geom_col() +
+  scale_x_continuous(breaks = 2014:2024) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(x = NULL, y = "Intakes") +
+  theme_minimal()
+```
+
+Intakes dropped sharply in 2020, during the COVID-19 pandemic, and have stayed well below 2019 levels. Because of this, the analysis will check whether results differ across time periods.
+
+## Survival analysis
+
+::: {.callout-note}
+**Work in progress.** This section will cover how long different groups of animals wait, which factors matter most, and whether high-risk animals can be flagged at intake.
+:::
+
+## Limitations
+
+- **One shelter in one city.** Results may not apply to other shelters.
+- **Ages are approximate.** The shelter records age as rounded whole units ("2 years," "3 weeks"), so `age_days` is an estimate.
+- **Some outcomes may be missing.** Stays with no recorded outcome that are under a year old are treated as still in the shelter on 5 May 2025. Some may be missing records instead.
+- **Matching assumes complete records.** If an intake or outcome is missing, an animal could be paired with the wrong visit.
+- **Old and new files can't be linked.** The animal ID format changed in 2025, so the newer data is analyzed separately.
+- **2020 was unusual.** COVID-19 changed intake patterns.
+- **Some grouping choices are assumptions.** For example, "rto-adopt" is treated as return to owner, and died and euthanized are combined.
+- **Only intake information is used.** Things that happen during a stay (behavior, medical treatment, marketing) are not in the data.
+
+## Appendix: data checks
+
+These checks show how I validated the data before analyzing it.
+
+### Raw file structure
+
+```{r}
+glimpse(intakes_old)
+glimpse(outcomes_old)
+glimpse(intakes_new)
+glimpse(outcomes_new)
+```
+
+### Date checks
+
+All counts of missing dates should be 0, and the years should fall between 2013 and 2025. 2013 and 2025 are partial years, and 2020 is low because of the pandemic.
+
+```{r}
+sum(is.na(intakes_old$intake_date))
+sum(is.na(outcomes_old_clean$outcome_date))
+range(intakes_old$intake_date)
+
+intakes_old |> count(year = year(intake_date))
+```
+
+### Outcome categories and file end dates
+
+```{r}
+outcomes_all |> count(outcome_type, sort = TRUE)
+
+# Confirm where each old file ends
+max(intakes_old$intake_date)
+max(outcomes_all$outcome_date)
+```
+
+### Stay length checks
+
+Negative stays would mean an animal left before it arrived, so that count should be 0.
 
 ```{r}
 stays |>
@@ -105,14 +310,13 @@ stays |>
             negative_stays = sum(los_days < 0),
             median_los = median(los_days))
 
-stays |> arrange(desc(los_days)) |>
-  select(animal_id,
-         intake_date,
-         outcome_date,
-         los_days)
+stays |>
+  arrange(desc(los_days)) |>
+  select(animal_id, intake_date, outcome_date, los_days) |>
+  head(10)
 ```
 
-## Investigate unmatched stays
+### Stays with no matched outcome
 
 ```{r}
 # 1. How long ago did the unmatched animals arrive?
@@ -137,27 +341,36 @@ stays |>
             over_1_year = sum(los_days > 365))
 ```
 
-## Clean data and group outcomes
+### Outcome groups after cleaning
 
 ```{r}
-stays_clean <- stays |>
-  filter(animal_type %in% c("Dog", "Cat")) |>
-  filter(!(still_in_shelter & los_days > 365)) |>
-  mutate(outcome_group = case_when(still_in_shelter ~ "Still in shelter",
-                                   is.na(outcome_type) ~ "Unknown outcome",
-                                   outcome_type == "adoption" ~ "Adopted",
-                                   outcome_type %in% c("return to owner",
-                                          "rto-adopt") ~ "Returned to owner",
-                                   outcome_type == "transfer" ~ "Transferred",
-                                   outcome_type == "euthanasia" ~ "Euthanized",
-                                   TRUE ~ "Other outcome"))
-
-nrow(stays_clean)
 stays_clean |>
   count(outcome_group, sort = TRUE)
+
 stays_clean |>
   count(animal_type, outcome_group) |>
   arrange(animal_type, desc(n))
 ```
 
-  
+### Why died and euthanized were grouped
+
+For dogs and cats, 68% of euthanasia was for suffering, and about three quarters of deaths happened in the shelter's or a foster's care.
+
+```{r}
+outcomes_old |>
+  filter(animal_type %in% c("Dog", "Cat"),
+         str_to_lower(outcome_type) %in% c("died", "euthanasia")) |>
+  count(outcome_type, outcome_subtype, sort = TRUE)
+```
+
+### Intake feature checks
+
+```{r}
+summary(stays_clean$age_days)
+stays_clean |> count(sex, fixed)
+stays_clean |> count(has_own_name)
+
+# Categories still to be grouped
+stays_clean |> count(intake_type, sort = TRUE)
+stays_clean |> count(intake_condition, sort = TRUE)
+```
