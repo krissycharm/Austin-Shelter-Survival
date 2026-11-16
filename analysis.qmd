@@ -64,7 +64,7 @@ theme_set(
 
 **Data.** More than 160,000 dog and cat stays from October 2013 to May 2025, from the City of Austin Open Data Portal.
 
-**Early findings.** Dogs and cats leave the shelter in different ways. Roughly half of both are adopted, but about one in four dogs is reclaimed by an owner (versus about one in twenty cats), while more than a third of cats are transferred to other organizations (versus about one in five dogs). Arrival condition matters a great deal: about 20% of injured animals and 17% of sick animals died or were euthanized, compared with under 2% of animals that arrived in normal condition.
+**Early findings.** Dogs and cats leave the shelter in different ways. Roughly half of both are adopted, but about one in four dogs is reclaimed by an owner (versus about one in twenty cats), while more than a third of cats are transferred to other organizations (versus about one in five dogs). Arrival condition matters, especially for cats: about 29% of injured cats and 22% of sick cats died or were euthanized, compared with 12% and 11% of dogs, and under 3% of animals that arrived in normal condition.
 
 **Still to come.** Survival curves showing how long different groups of animals wait, a model of which factors matter most, and a test of whether animals at high risk can be flagged at intake.
 
@@ -296,20 +296,20 @@ Roughly half of both species are adopted. Dogs are far more likely to be reclaim
 
 stays_clean |>
   filter(intake_year %in% 2014:2024) |>
-  count(intake_year) |>
-  ggplot(aes(x = intake_year, y = n)) +
-  geom_col(fill = "#2F6F6A", width = 0.75) +
-  geom_text(aes(label = scales::comma(n)), vjust = -0.5, size = 3) +
+  count(intake_year, animal_type) |>
+  ggplot(aes(x = intake_year, y = n, colour = animal_type)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2) +
+  scale_colour_manual(values = species_colors) +
   scale_x_continuous(breaks = 2014:2024) +
-  scale_y_continuous(labels = scales::comma,
-                     expand = expansion(mult = c(0, 0.1))) +
-  labs(title = "Intakes fell sharply in 2020 and stayed lower",
-       subtitle = "Dog and cat intakes per year, 2014 to 2024",
-       x = NULL, y = NULL) +
+  scale_y_continuous(labels = scales::comma, limits = c(0, NA)) +
+  labs(title = "Dog intakes are still about half their pre-2020 level; cat intakes are back near theirs",
+       subtitle = "2014 to 2024",
+       x = NULL, y = NULL, colour = NULL) +
   theme(panel.grid.major.x = element_blank())
 ```
 
-Intakes dropped sharply in 2020, during the COVID-19 pandemic, and have stayed well below 2019 levels. Because of this, the analysis will check whether results differ across time periods.
+Intakes of both species fell by roughly half in 2020, during the COVID-19 pandemic. By 2024, cat intakes were about 12% below their 2014 to 2019 average, while dog intakes were still about half of theirs. Since 2023 the shelter has taken in more cats than dogs. The data cannot say why, but because the mix of animals changed, the analysis will check whether results differ across time periods.
 
 ### Condition on arrival
 
@@ -330,24 +330,29 @@ stays_clean |>
 
 ```{r}
 #| echo: false
-#| fig-cap: "Source: Austin Animal Center, Oct 2013 to May 2025."
+#| fig-cap: "Conditions with fewer than 1,000 stays for a species are not shown (see appendix). Source: Austin Animal Center."
 
 stays_clean |>
   filter(outcome_group != "Unknown outcome") |>
-  group_by(condition_group) |>
-  summarise(share = mean(outcome_group == "Died or euthanized")) |>
-  ggplot(aes(x = share, y = reorder(condition_group, share))) +
-  geom_col(fill = "#B5483A", width = 0.7) +
+  group_by(animal_type, condition_group) |>
+  summarise(share = mean(outcome_group == "Died or euthanized"),
+            stays = n(),
+            .groups = "drop") |>
+  filter(stays >= 1000) |>
+  ggplot(aes(x = share, y = reorder(condition_group, share), fill = animal_type)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
   geom_text(aes(label = scales::percent(share, accuracy = 0.1)),
-            hjust = -0.15, size = 3.5) +
+            position = position_dodge(width = 0.8), hjust = -0.15, size = 3.5) +
   scale_x_continuous(labels = scales::percent,
                      expand = expansion(mult = c(0, 0.15))) +
-  labs(title = "Who is most at risk?",
+  scale_fill_manual(values = species_colors) +
+  labs(title = "Injured and sick cats are most at risk",
        subtitle = "Share of stays ending in death or euthanasia, by condition on arrival",
-       x = NULL, y = NULL) +
-       theme(panel.grid.major.y = element_blank())
+       x = NULL, y = NULL, fill = NULL) +
+  guides(fill = guide_legend(reverse = TRUE)) +
+  theme(panel.grid.major.y = element_blank())
 ```
-Injured and sick animals are far more likely to die or be euthanized: about 20% and 17% of their stays end that way, compared with under 2% for animals that arrive in normal condition. The "Pregnant" and "Behavior or feral" groups are small (170 and 225 stays), so their percentages are less reliable.
+Injured and sick animals are far more likely to die or be euthanized than animals that arrive in normal condition, and the gap is much wider for cats: about 29% of injured cats and 22% of sick cats, compared with 12% and 11% of dogs. Animals that arrive in normal condition rarely have this outcome (2.3% of cats, 1.6% of dogs).
 
 ## Survival analysis
 
@@ -481,3 +486,21 @@ stays_clean |> count(intake_condition, sort = TRUE)
 stays_clean |> count(condition_group)
 stays_clean |> count(age_group)
 ```
+
+```{r}
+stays_clean |>
+  filter(outcome_group != "Unknown outcome") |>
+  group_by(animal_type, condition_group) |>
+  summarise(stays = n(),
+            share_died_euth = mean(outcome_group == "Died or euthanized"),
+            .groups = "drop") |>
+    mutate(share_died_euth = scales::percent(share_died_euth, accuracy = 0.1)) |>
+  arrange(condition_group, animal_type)
+```
+```{r}
+stays_clean |>
+  filter(intake_year %in% 2014:2024) |>
+  count(intake_year, animal_type) |>
+  pivot_wider(names_from = animal_type, values_from = n)
+```
+
