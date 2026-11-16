@@ -282,7 +282,8 @@ stays_clean |>
   labs(title = "How stays end for dogs and cats",
        subtitle = "Share of each species' stays",
        x = NULL, y = NULL, fill = NULL) +
-  guides(fill = guide_legend(reverse = TRUE))
+  guides(fill = guide_legend(reverse = TRUE)) +
+  theme(panel.grid.major.y = element_blank())
 ```
 
 Roughly half of both species are adopted. Dogs are far more likely to be reclaimed by an owner, often within days, while cats are far more likely to be transferred to rescue partners and other shelters.
@@ -304,7 +305,8 @@ stays_clean |>
                      expand = expansion(mult = c(0, 0.1))) +
   labs(title = "Intakes fell sharply in 2020 and stayed lower",
        subtitle = "Dog and cat intakes per year, 2014 to 2024",
-       x = NULL, y = NULL)
+       x = NULL, y = NULL) +
+  theme(panel.grid.major.x = element_blank())
 ```
 
 Intakes dropped sharply in 2020, during the COVID-19 pandemic, and have stayed well below 2019 levels. Because of this, the analysis will check whether results differ across time periods.
@@ -342,7 +344,8 @@ stays_clean |>
                      expand = expansion(mult = c(0, 0.15))) +
   labs(title = "Who is most at risk?",
        subtitle = "Share of stays ending in death or euthanasia, by condition on arrival",
-       x = NULL, y = NULL)
+       x = NULL, y = NULL) +
+       theme(panel.grid.major.y = element_blank())
 ```
 Injured and sick animals are far more likely to die or be euthanized: about 20% and 17% of their stays end that way, compared with under 2% for animals that arrive in normal condition. The "Pregnant" and "Behavior or feral" groups are small (170 and 225 stays), so their percentages are less reliable.
 
