@@ -429,6 +429,78 @@ cm_species |>
                              "By day 60", "By day 90"),
                align = c("l", "l", "r", "r", "r", "r"))
 ```
+### Does age at arrival matter?
+
+```{r}
+cm_age <- cuminc(
+  Surv(los_days, event) ~ species_age,
+  data = stays_cr |>
+    filter(!is.na(age_group)) |>
+    mutate(species_age = paste(animal_type, age_group, sep = " | "))
+)
+```
+```{r}
+#| echo: false
+#| fig-height: 4.5
+#| fig-cap: "Stays still open when the data ended are treated as censored. Source: Austin Animal Center."
+
+cm_age |>
+  broom::tidy(times = 1:90) |>
+  filter(outcome == "Adopted") |>
+  separate_wider_delim(strata, delim = " | ", names = c("species", "age_group")) |>
+  mutate(age_group = factor(age_group, levels = levels(stays_clean$age_group))) |>
+  ggplot(aes(x = time, y = estimate, colour = age_group)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ species) +
+  scale_colour_viridis_d(end = 0.85) +
+  scale_x_continuous(breaks = seq(0, 90, 30)) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, NA)) +
+  labs(title = "Animals 8 weeks to 1 year old are adopted fastest",
+       subtitle = "Share of stays ended in adoption by day since arrival",
+       x = "Days since arrival", y = NULL, colour = NULL)
+```
+```{r}
+#| echo: false
+
+cm_age |>
+  broom::tidy(times = c(7, 30, 90)) |>
+  filter(outcome == "Adopted") |>
+  separate_wider_delim(strata, delim = " | ", names = c("species", "age_group")) |>
+  mutate(age_group = factor(age_group, levels = levels(stays_clean$age_group)),
+         estimate = scales::percent(estimate, accuracy = 0.1)) |>
+  select(species, age_group, time, estimate) |>
+  pivot_wider(names_from = time, values_from = estimate, names_prefix = "Day ") |>
+  arrange(species, age_group) |>
+  knitr::kable(col.names = c("Species", "Age at arrival",
+                             "By day 7", "By day 30", "By day 90"),
+               align = c("l", "l", "r", "r", "r"))
+```
+
+Age at arrival makes a large difference. In both species, animals between 8 weeks and 1 year old are adopted fastest and most often: 56% of cats and 58% of dogs in that group are adopted within 90 days. Dogs over 5 years old fare worst, with 24% adopted within 90 days, compared with 38% of dogs aged 1 to 5. For cats the two adult groups look alike (35% each).
+
+The youngest animals differ by species. Puppies under 8 weeks are adopted quickly (22% within a week, 57% within 90 days), while kittens under 8 weeks start slowly (5% within a week) and catch up later, reaching 47% by day 90.
+
+These are shares of all arrivals. An animal that leaves another way, such as being reclaimed by its owner, is not counted as adopted, so a lower adoption share does not by itself mean a longer wait.
+
+```{r}
+#| echo: false
+
+cm_age |>
+  broom::tidy(times = 90) |>
+  filter(outcome != "Other outcome") |>
+  separate_wider_delim(strata, delim = " | ", names = c("species", "age_group")) |>
+  mutate(age_group = factor(age_group, levels = levels(stays_clean$age_group)),
+         estimate = scales::percent(estimate, accuracy = 0.1)) |>
+  select(species, age_group, outcome, estimate) |>
+  pivot_wider(names_from = outcome, values_from = estimate) |>
+  select(species, age_group, Adopted, `Returned to owner`,
+         Transferred, `Died or euthanized`) |>
+  arrange(species, age_group) |>
+  knitr::kable(col.names = c("Species", "Age at arrival", "Adopted",
+                             "Returned to owner", "Transferred",
+                             "Died or euthanized"),
+               align = c("l", "l", "r", "r", "r", "r"))
+```
 
 ## Limitations
 
