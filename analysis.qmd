@@ -476,11 +476,15 @@ cm_age |>
                align = c("l", "l", "r", "r", "r"))
 ```
 
-Age at arrival makes a large difference. In both species, animals between 8 weeks and 1 year old are adopted fastest and most often: 56% of cats and 58% of dogs in that group are adopted within 90 days. Dogs over 5 years old fare worst, with 24% adopted within 90 days, compared with 38% of dogs aged 1 to 5. For cats the two adult groups look alike (35% each).
+Age at arrival makes a large difference, but what it changes depends on the species. In both species, animals between 8 weeks and 1 year old are adopted fastest and most often: 56% of cats and 58% of dogs in that group are adopted within 90 days, and 25% of cats and 32% of dogs within the first week.
 
-The youngest animals differ by species. Puppies under 8 weeks are adopted quickly (22% within a week, 57% within 90 days), while kittens under 8 weeks start slowly (5% within a week) and catch up later, reaching 47% by day 90.
+For dogs, older age mostly changes how stays end. The share adopted falls from 58% (8 weeks to 1 year) to 38% (1 to 5 years) and 24% (over 5 years), but the share returned to their owners rises from 17% to 32% to 46%. Almost half of dogs over 5 years old go home with their owners, so their low adoption share reflects reclaims as much as longer waits.
 
-These are shares of all arrivals. An animal that leaves another way, such as being reclaimed by its owner, is not counted as adopted, so a lower adoption share does not by itself mean a longer wait.
+For cats, the two adult groups are adopted at similar rates (35% each), but the oldest cats are the most likely to die or be euthanized: 12% of cats over 5 years old, compared with 3% to 7% of younger cats.
+
+The youngest animals differ by species. Puppies under 8 weeks are adopted quickly (22% within a week, 57% within 90 days). Kittens under 8 weeks start slowly (5% within a week) and reach 47% by day 90, and 43% of them are transferred to other organizations.
+
+These are shares of all arrivals. Shares at day 90 do not add up to 100% because some stays ended in other ways or were still open.
 
 ```{r}
 #| echo: false
@@ -502,6 +506,60 @@ cm_age |>
                align = c("l", "l", "r", "r", "r", "r"))
 ```
 
+### Does condition on arrival matter?
+
+```{r}
+cm_cond <- cuminc(
+  Surv(los_days, event) ~ species_cond,
+  data = stays_cr |>
+    filter(condition_group %in% c("Normal", "Injured", "Sick or medical",
+                                  "Neonatal or nursing")) |>
+    mutate(species_cond = paste(animal_type, condition_group, sep = " | "))
+)
+```
+
+```{r}
+#| echo: false
+#| fig-height: 4.5
+#| fig-cap: "Stays still open when the data ended are treated as censored. Source: Austin Animal Center."
+
+cm_cond |>
+  broom::tidy(times = 1:90) |>
+  filter(outcome == "Adopted") |>
+  separate_wider_delim(strata, delim = " | ", names = c("species", "condition")) |>
+  mutate(condition = factor(condition, levels = levels(stays_clean$condition_group))) |>
+  ggplot(aes(x = time, y = estimate, colour = condition)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ species) +
+  scale_colour_viridis_d(end = 0.85) +
+  scale_x_continuous(breaks = seq(0, 90, 30)) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, NA)) +
+  labs(title = "Adoption by condition on arrival",
+       subtitle = "Share of stays ended in adoption by day since arrival",
+       x = "Days since arrival", y = NULL, colour = NULL)
+```
+
+```{r}
+#| echo: false
+
+cm_cond |>
+  broom::tidy(times = 90) |>
+  filter(outcome != "Other outcome") |>
+  separate_wider_delim(strata, delim = " | ", names = c("species", "condition")) |>
+  mutate(condition = factor(condition, levels = levels(stays_clean$condition_group)),
+         estimate = scales::percent(estimate, accuracy = 0.1)) |>
+  select(species, condition, outcome, estimate) |>
+  pivot_wider(names_from = outcome, values_from = estimate) |>
+  select(species, condition, Adopted, `Returned to owner`,
+         Transferred, `Died or euthanized`) |>
+  arrange(species, condition) |>
+  knitr::kable(col.names = c("Species", "Condition on arrival", "Adopted",
+                             "Returned to owner", "Transferred",
+                             "Died or euthanized"),
+               align = c("l", "l", "r", "r", "r", "r"))
+```
+
+
 ## Limitations
 
 - **One shelter in one city.** Results may not apply to other shelters.
@@ -512,6 +570,7 @@ cm_age |>
 - **2020 was unusual.** COVID-19 changed intake patterns.
 - **Some grouping choices are assumptions.** For example, "rto-adopt" is treated as return to owner, and died and euthanized are combined.
 - **Only intake information is used.** Things that happen during a stay (behavior, medical treatment, marketing) are not in the data.
+- **Reclaims and arrival type overlap.** Animals that arrive as strays can be claimed by their owners, but animals surrendered by an owner generally cannot, so intake type affects how stays end and has to be accounted for in the model.
 
 ## Appendix: data checks
 
