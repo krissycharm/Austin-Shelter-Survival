@@ -29,7 +29,7 @@ execute:
 ```{r}
 #| include: false
 
-# Setup: load packages and the four data files )
+# Setup: load packages and the four data files
 library(tidyverse)
 library(janitor)
 library(lubridate)
@@ -73,10 +73,10 @@ Dogs are adopted faster at first (22% of dog stays end in adoption within a week
 
 Age and condition shape where animals go as much as how fast: nearly half of dogs over 5 years old are returned to their owners, and most neonatal animals are transferred.
 
-**Still to come.** Survival curves showing how long different groups of animals wait, a model of which factors matter most, and a test of whether animals at high risk can be flagged at intake.
-
+**Still to come.** Written findings from the models of which factors matter most, and a test of whether animals at high risk can be flagged at intake, using the newer data.
 :::
-<!-- Update this summary once the survival analysis is finished. -->
+
+<!-- Update this summary once the model results are written up. -->
 
 ## Why this matters
 
@@ -134,8 +134,6 @@ outcomes_old_clean <- outcomes_old |>
             outcome_date = to_date(date_time),
             outcome_type)
 ```
-
-
 
 ```{r}
 # Lowercase outcome labels so "Adoption" and "adoption" count as the same thing
@@ -260,6 +258,7 @@ stays_clean <- stays_clean |>
 | Died and euthanized grouped together | Both are non-live outcomes, and most deaths happened in the shelter's care |
 | "rto-adopt" counted as returned to owner | An assumption: an owner reclaiming an animal |
 | Only information known at intake used as predictors | The goal is to flag animals when they arrive |
+| Models fit separately for dogs and cats, with repeat visits by the same animal grouped together | The two species behave differently, and one animal's stays are not independent of each other |
 
 After these steps the analysis covers `r format(nrow(stays_clean), big.mark = ",")` stays: `r format(sum(stays_clean$animal_type == "Dog"), big.mark = ",")` dogs and `r format(sum(stays_clean$animal_type == "Cat"), big.mark = ",")` cats. Of these, `r format(sum(stays_clean$still_in_shelter), big.mark = ",")` had not yet left the shelter when the data ended.
 
@@ -310,7 +309,7 @@ stays_clean |>
   scale_colour_manual(values = species_colors) +
   scale_x_continuous(breaks = 2014:2024) +
   scale_y_continuous(labels = scales::comma, limits = c(0, NA)) +
-    labs(title = "Dog intakes fell much further than cat intakes after 2020",
+  labs(title = "Dog intakes fell much further than cat intakes after 2020",
        subtitle = "Dog and cat intakes per year, 2014 to 2024",
        x = NULL, y = NULL, colour = NULL) +
   theme(panel.grid.major.x = element_blank())
@@ -359,6 +358,7 @@ stays_clean |>
   guides(fill = guide_legend(reverse = TRUE)) +
   theme(panel.grid.major.y = element_blank())
 ```
+
 Injured and sick animals are far more likely to die or be euthanized than animals that arrive in normal condition, and the gap is much wider for cats: about 29% of injured cats and 22% of sick cats, compared with 12% and 11% of dogs. Animals that arrive in normal condition rarely have this outcome (2.3% of cats, 1.6% of dogs).
 
 ## Survival analysis
@@ -393,6 +393,7 @@ cm_species |>
        subtitle = "Share of stays ended in adoption by day since arrival",
        x = "Days since arrival", y = NULL, colour = NULL)
 ```
+
 Dogs are adopted faster at first. Within a week, 22% of dog stays and 13% of cat stays have ended in adoption, and by day 30 the shares are 37% and 28%. The gap then closes: the cat curve keeps climbing while the dog curve flattens, and the two cross at roughly day 75. By day 90, 47% of cat stays and 46% of dog stays have ended in adoption. Past day 90 both curves flatten at close to half of all stays, with cats slightly ahead.
 
 ```{r}
@@ -414,12 +415,14 @@ cm_species |>
   labs(title = "How stays end over time",
        x = "Days since arrival", y = NULL, colour = NULL)
 ```
+
 The other outcomes differ even more by species. About one in five dog stays (21%) ends with the dog going back to its owner within a week, compared with 3.5% of cats. Cats are far more likely to be transferred: 30% of cat stays end in a transfer within the first week, versus 14% of dog stays. Deaths and euthanasia are less common and happen mostly early: 4.0% of cat stays and 1.7% of dog stays within a week, rising only slightly by day 90.
 
 These curves show shares of all arrivals, not the chance that an animal still waiting will be adopted. A dog reclaimed on day 1 never enters the adoption pool, so the models in the next section look at each outcome separately.
 
 ```{r}
 #| echo: false
+
 cm_species |>
   broom::tidy(times = c(7, 30, 60, 90)) |>
   filter(outcome != "Other outcome") |>
@@ -431,6 +434,7 @@ cm_species |>
                              "By day 60", "By day 90"),
                align = c("l", "l", "r", "r", "r", "r"))
 ```
+
 ### Does age at arrival matter?
 
 ```{r}
@@ -441,6 +445,7 @@ cm_age <- cuminc(
     mutate(species_age = paste(animal_type, age_group, sep = " | "))
 )
 ```
+
 ```{r}
 #| echo: false
 #| fig-height: 4.5
@@ -461,6 +466,7 @@ cm_age |>
        subtitle = "Share of stays ended in adoption by day since arrival",
        x = "Days since arrival", y = NULL, colour = NULL)
 ```
+
 ```{r}
 #| echo: false
 
@@ -560,11 +566,14 @@ cm_cond |>
                              "Died or euthanized"),
                align = c("l", "l", "r", "r", "r", "r"))
 ```
+
 Condition on arrival strongly affects where animals end up. Animals that arrive in normal condition are adopted most often: 52% of cats and 48% of dogs within 90 days. Among animals that arrive injured or sick, only about 27% of cats and 30% of dogs are adopted, and many do not leave alive: within 90 days, 29% of injured cats and 22% of sick cats died or were euthanized, compared with 12% and 11% of dogs.
 
 Neonatal and nursing animals mostly leave by transfer to another organization (69% of cats and 53% of dogs). Adoption is very slow at first for these animals: only about 1% of neonatal cats are adopted in the first month. Neonatal dogs are adopted slowly until around day 55 to 60, when their curve rises sharply and ends above those of injured and sick dogs. The data cannot say why, but the timing is consistent with puppies reaching adoptable age at around eight weeks.
 
 ### Which factors matter most?
+
+Age, condition, and intake type overlap: kittens often arrive as neonates, older animals often arrive sick, and strays can be reclaimed while surrendered animals mostly cannot. To separate them, I fit a Cox regression model for each outcome, separately for dogs and cats. Each model estimates how much a factor changes the rate of an outcome (a **hazard ratio**) while holding the other factors equal. For adoption, an animal that leaves another way, such as being reclaimed or transferred, stops being at risk of adoption. Repeat visits by the same animal are grouped together so that the uncertainty estimates are not too narrow.
 
 ```{r}
 stays_model <- stays_clean |>
@@ -588,19 +597,25 @@ stays_model <- stays_clean |>
 dogs <- stays_model |> filter(animal_type == "Dog")
 cats <- stays_model |> filter(animal_type == "Cat")
 
+# cluster(animal_id) groups repeat visits by the same animal together
 fit_adopt_dog <- coxph(Surv(los_days, outcome_group == "Adopted") ~
                          age_group + condition_model + sex_fixed +
-                         intake_type + has_own_name + era, data = dogs)
+                         intake_type + has_own_name + era + cluster(animal_id),
+                       data = dogs)
 fit_adopt_cat <- coxph(Surv(los_days, outcome_group == "Adopted") ~
                          age_group + condition_model + sex_fixed +
-                         intake_type + has_own_name + era, data = cats)
+                         intake_type + has_own_name + era + cluster(animal_id),
+                       data = cats)
 fit_death_dog <- coxph(Surv(los_days, outcome_group == "Died or euthanized") ~
                          age_group + condition_model + sex_fixed +
-                         intake_type + has_own_name + era, data = dogs)
+                         intake_type + has_own_name + era + cluster(animal_id),
+                       data = dogs)
 fit_death_cat <- coxph(Surv(los_days, outcome_group == "Died or euthanized") ~
                          age_group + condition_model + sex_fixed +
-                         intake_type + has_own_name + era, data = cats)
+                         intake_type + has_own_name + era + cluster(animal_id),
+                       data = cats)
 ```
+
 ```{r}
 #| echo: false
 
@@ -633,7 +648,7 @@ hr_all <- bind_rows(
 ```{r}
 #| echo: false
 #| fig-height: 7
-#| fig-cap: "Hazard ratios with 95% confidence intervals. The dashed line at 1 means no difference from the comparison group. Source: Austin Animal Center."
+#| fig-cap: "Hazard ratios with 95% confidence intervals. The dashed line at 1 means no difference from the reference group. Estimates for 'Sex: unknown unknown' fall outside the plotted range because that group is small and unusual. Source: Austin Animal Center."
 
 hr_all |>
   filter(outcome == "Adopted") |>
@@ -643,12 +658,18 @@ hr_all |>
   geom_pointrange(aes(xmin = conf.low, xmax = conf.high),
                   position = position_dodge(width = 0.6), size = 0.35) +
   scale_x_log10(breaks = c(0.25, 0.5, 1, 2, 4)) +
+  coord_cartesian(xlim = c(0.2, 2)) +
   scale_colour_manual(values = species_colors) +
   labs(title = "What speeds up or slows down adoption?",
        subtitle = "Rate of adoption compared with the reference group (more than 1 = faster)",
        x = "Hazard ratio (log scale)", y = NULL, colour = NULL)
 ```
 
+Each dot shows how much faster (to the right of the dashed line) or slower (to the left) animals in that group are adopted than the reference group, among animals still waiting and with the other factors in the model held equal. The reference groups are age 8 weeks to 1 year, normal condition, intact females, strays, arriving without a name, and arriving before 2020. A line that crosses the dashed line means the data cannot distinguish that group from its reference group.
+
+::: {.callout-note}
+**Work in progress.** Written findings from these models, including the models of death or euthanasia, will go here once the assumption checks in the appendix are complete.
+:::
 
 ## Limitations
 
@@ -661,7 +682,7 @@ hr_all |>
 - **Some grouping choices are assumptions.** For example, "rto-adopt" is treated as return to owner, and died and euthanized are combined.
 - **Only intake information is used.** Things that happen during a stay (behavior, medical treatment, marketing) are not in the data.
 - **Reclaims and arrival type overlap.** Animals that arrive as strays can be claimed by their owners, but animals surrendered by an owner generally cannot, so intake type affects how stays end and has to be accounted for in the model.
-- **Model assumptions.** A hazard ratio summarizes an effect across the whole stay. Where curves cross, as with young kittens, the effect changes over time, so the ratio is an average.
+- **Model assumptions.** The models assume each factor's effect is constant over the stay. The curves suggest this is not exactly true, for example for kittens under 8 weeks, so the hazard ratios are average effects over the whole stay (see the appendix check). In the adoption models, animals that leave another way are treated as no longer available for adoption, so the results describe animals still waiting, not all arrivals.
 
 ## Appendix: data checks
 
@@ -786,9 +807,10 @@ stays_clean |>
   summarise(stays = n(),
             share_died_euth = mean(outcome_group == "Died or euthanized"),
             .groups = "drop") |>
-    mutate(share_died_euth = scales::percent(share_died_euth, accuracy = 0.1)) |>
+  mutate(share_died_euth = scales::percent(share_died_euth, accuracy = 0.1)) |>
   arrange(condition_group, animal_type)
 ```
+
 ```{r}
 stays_clean |>
   filter(intake_year %in% 2014:2024) |>
@@ -796,3 +818,70 @@ stays_clean |>
   pivot_wider(names_from = animal_type, values_from = n)
 ```
 
+### Model checks: events per group
+
+Each group in a model needs enough events (adoptions or deaths) for its estimate to be stable. A rough rule is at least 10 to 20 events per group.
+
+```{r}
+stays_model |>
+  group_by(animal_type, condition_model) |>
+  summarise(stays = n(),
+            adopted = sum(outcome_group == "Adopted"),
+            died_euth = sum(outcome_group == "Died or euthanized"),
+            .groups = "drop") |>
+  knitr::kable(col.names = c("Species", "Condition (model groups)", "Stays",
+                             "Adopted", "Died or euthanized"),
+               format.args = list(big.mark = ","))
+```
+
+### Model checks: proportional hazards
+
+The models assume each factor has the same effect throughout the stay. This check tests that and plots how each effect changes over time. With this many animals, the test flags even tiny departures, so the plots matter more than the p-values: a flat line means the effect is steady, and a sloping or curving line means it changes during the stay. The check uses the same models without the repeat-visit grouping, which affects only the confidence intervals and not how effects change over time.
+
+```{r}
+fit_zph_cat <- coxph(Surv(los_days, outcome_group == "Adopted") ~
+                       age_group + condition_model + sex_fixed +
+                       intake_type + has_own_name + era, data = cats)
+fit_zph_dog <- coxph(Surv(los_days, outcome_group == "Adopted") ~
+                       age_group + condition_model + sex_fixed +
+                       intake_type + has_own_name + era, data = dogs)
+
+zph_cat <- cox.zph(fit_zph_cat)
+zph_dog <- cox.zph(fit_zph_dog)
+
+zph_table <- function(z) {
+  z$table |>
+    as.data.frame() |>
+    tibble::rownames_to_column("term") |>
+    mutate(p = format.pval(p, digits = 2, eps = 0.001)) |>
+    knitr::kable(digits = 1)
+}
+```
+
+**Cats: adoption model**
+
+```{r}
+zph_table(zph_cat)
+```
+
+```{r}
+#| fig-height: 6
+#| fig-cap: "Cats: how each factor's effect on adoption changes over the stay (first six terms: three age groups, then three conditions). A flat line means a steady effect."
+
+par(mfrow = c(2, 3))
+for (i in 1:6) plot(zph_cat, var = i, resid = FALSE)
+```
+
+**Dogs: adoption model**
+
+```{r}
+zph_table(zph_dog)
+```
+
+```{r}
+#| fig-height: 6
+#| fig-cap: "Dogs: how each factor's effect on adoption changes over the stay (first six terms: three age groups, then three conditions). A flat line means a steady effect."
+
+par(mfrow = c(2, 3))
+for (i in 1:6) plot(zph_dog, var = i, resid = FALSE)
+```
