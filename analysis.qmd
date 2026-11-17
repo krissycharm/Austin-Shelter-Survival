@@ -71,6 +71,8 @@ theme_set(
 
 Dogs are adopted faster at first (22% of dog stays end in adoption within a week, versus 13% of cats), but by day 90 the two are nearly level, at 46% to 47%.
 
+Age and condition shape where animals go as much as how fast: nearly half of dogs over 5 years old are returned to their owners, and most neonatal animals are transferred.
+
 **Still to come.** Survival curves showing how long different groups of animals wait, a model of which factors matter most, and a test of whether animals at high risk can be flagged at intake.
 
 :::
@@ -558,6 +560,94 @@ cm_cond |>
                              "Died or euthanized"),
                align = c("l", "l", "r", "r", "r", "r"))
 ```
+Condition on arrival strongly affects where animals end up. Animals that arrive in normal condition are adopted most often: 52% of cats and 48% of dogs within 90 days. Among animals that arrive injured or sick, only about 27% of cats and 30% of dogs are adopted, and many do not leave alive: within 90 days, 29% of injured cats and 22% of sick cats died or were euthanized, compared with 12% and 11% of dogs.
+
+Neonatal and nursing animals mostly leave by transfer to another organization (69% of cats and 53% of dogs). Adoption is very slow at first for these animals: only about 1% of neonatal cats are adopted in the first month. Neonatal dogs are adopted slowly until around day 55 to 60, when their curve rises sharply and ends above those of injured and sick dogs. The data cannot say why, but the timing is consistent with puppies reaching adoptable age at around eight weeks.
+
+### Which factors matter most?
+
+```{r}
+stays_model <- stays_clean |>
+  filter(outcome_group != "Unknown outcome", !is.na(age_group)) |>
+  mutate(
+    condition_model = case_when(
+      condition_group %in% c("Normal", "Injured", "Sick or medical",
+                             "Neonatal or nursing") ~ as.character(condition_group),
+      TRUE ~ "Other"),
+    condition_model = factor(condition_model,
+                             levels = c("Normal", "Injured", "Sick or medical",
+                                        "Neonatal or nursing", "Other")),
+    age_group   = relevel(age_group, ref = "8 weeks to 1 year"),
+    sex_fixed   = relevel(factor(paste(sex, fixed)), ref = "female intact"),
+    intake_type = factor(intake_type,
+                         levels = c("Stray", "Owner Surrender",
+                                    "Public Assist", "Abandoned")),
+    era = if_else(intake_year <= 2019, "2013 to 2019", "2020 to 2025")
+  )
+
+dogs <- stays_model |> filter(animal_type == "Dog")
+cats <- stays_model |> filter(animal_type == "Cat")
+
+fit_adopt_dog <- coxph(Surv(los_days, outcome_group == "Adopted") ~
+                         age_group + condition_model + sex_fixed +
+                         intake_type + has_own_name + era, data = dogs)
+fit_adopt_cat <- coxph(Surv(los_days, outcome_group == "Adopted") ~
+                         age_group + condition_model + sex_fixed +
+                         intake_type + has_own_name + era, data = cats)
+fit_death_dog <- coxph(Surv(los_days, outcome_group == "Died or euthanized") ~
+                         age_group + condition_model + sex_fixed +
+                         intake_type + has_own_name + era, data = dogs)
+fit_death_cat <- coxph(Surv(los_days, outcome_group == "Died or euthanized") ~
+                         age_group + condition_model + sex_fixed +
+                         intake_type + has_own_name + era, data = cats)
+```
+```{r}
+#| echo: false
+
+label_terms <- function(df) {
+  df |>
+    mutate(label = case_when(
+      str_detect(term, "^age_group")       ~ paste("Age:", str_remove(term, "^age_group")),
+      str_detect(term, "^condition_model") ~ paste("Condition:", str_remove(term, "^condition_model")),
+      str_detect(term, "^sex_fixed")       ~ paste("Sex:", str_remove(term, "^sex_fixed")),
+      str_detect(term, "^intake_type")     ~ paste("Intake:", str_remove(term, "^intake_type")),
+      str_detect(term, "^has_own_name")    ~ "Arrived with a name",
+      str_detect(term, "^era")             ~ paste("Period:", str_remove(term, "^era")),
+      TRUE ~ term))
+}
+
+get_hr <- function(fit, species, outcome) {
+  broom::tidy(fit, exponentiate = TRUE, conf.int = TRUE) |>
+    mutate(species = species, outcome = outcome)
+}
+
+hr_all <- bind_rows(
+  get_hr(fit_adopt_dog, "Dog", "Adopted"),
+  get_hr(fit_adopt_cat, "Cat", "Adopted"),
+  get_hr(fit_death_dog, "Dog", "Died or euthanized"),
+  get_hr(fit_death_cat, "Cat", "Died or euthanized")
+) |>
+  label_terms()
+```
+
+```{r}
+#| echo: false
+#| fig-height: 7
+#| fig-cap: "Hazard ratios with 95% confidence intervals. The dashed line at 1 means no difference from the comparison group. Source: Austin Animal Center."
+
+hr_all |>
+  filter(outcome == "Adopted") |>
+  mutate(label = factor(label, levels = rev(unique(label)))) |>
+  ggplot(aes(x = estimate, y = label, colour = species)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high),
+                  position = position_dodge(width = 0.6), size = 0.35) +
+  scale_x_log10(breaks = c(0.25, 0.5, 1, 2, 4)) +
+  scale_colour_manual(values = species_colors) +
+  labs(title = "What speeds up or slows down adoption?",
+       subtitle = "Rate of adoption compared with the reference group (more than 1 = faster)",
+       x = "Hazard ratio (log scale)", y = NULL, colour = NULL)
+```
 
 
 ## Limitations
@@ -571,6 +661,7 @@ cm_cond |>
 - **Some grouping choices are assumptions.** For example, "rto-adopt" is treated as return to owner, and died and euthanized are combined.
 - **Only intake information is used.** Things that happen during a stay (behavior, medical treatment, marketing) are not in the data.
 - **Reclaims and arrival type overlap.** Animals that arrive as strays can be claimed by their owners, but animals surrendered by an owner generally cannot, so intake type affects how stays end and has to be accounted for in the model.
+- **Model assumptions.** A hazard ratio summarizes an effect across the whole stay. Where curves cross, as with young kittens, the effect changes over time, so the ratio is an average.
 
 ## Appendix: data checks
 
