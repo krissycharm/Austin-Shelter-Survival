@@ -780,8 +780,8 @@ hr_death_windows |>
   geom_pointrange(aes(xmin = conf.low, xmax = conf.high),
                   position = position_dodge(width = 0.6), size = 0.3) +
   facet_wrap(~ window) +
-  scale_x_log10(breaks = c(0.1, 0.25, 0.5, 1, 2, 4, 8, 16)) +
-  coord_cartesian(xlim = c(0.05, 30)) +
+  scale_x_log10(breaks = c(0.25, 1, 4, 16)) +
+  coord_cartesian(xlim = c(0.05, 40)) +
   scale_colour_manual(values = species_colors) +
   labs(title = "What raises the risk of death or euthanasia, by phase of the stay",
        subtitle = "Rate of death or euthanasia compared with the reference group (more than 1 = higher risk)",
@@ -1036,4 +1036,14 @@ hr_windows |>
   knitr::kable(col.names = c("Species", "Factor", "Days 0 to 14",
                              "Days 15 to 56", "Day 57 onward"),
                align = c("l", "l", "r", "r", "r"))
+```
+Hazard ratios for death or euthanasia, with 95% confidence intervals in brackets.
+
+```{r}
+hr_death_windows |>
+  mutate(result = sprintf("%.2f (%.2f to %.2f)", estimate, conf.low, conf.high)) |>
+  select(species, label, window, result) |>
+  pivot_wider(names_from = window, values_from = result) |>
+  knitr::kable(col.names = c("Species", "Factor", "Days 0 to 14", "Day 15 onward"),
+               align = c("l", "l", "r", "r"))
 ```
