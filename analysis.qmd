@@ -73,10 +73,12 @@ Dogs are adopted faster at first (22% of dog stays end in adoption within a week
 
 Age and condition shape where animals go as much as how fast: nearly half of dogs over 5 years old are returned to their owners, and most neonatal animals are transferred.
 
-**Still to come.** Written findings from the models of which factors matter most, and a test of whether animals at high risk can be flagged at intake, using the newer data.
+The importance of age and condition changes during a stay: injured and neonatal animals are adopted far more slowly in the first weeks, but among those still waiting after eight weeks the gap narrows or disappears.
+
+**Still to come.** Models of which animals are most likely to die or be euthanized, and a test of whether animals at high risk can be flagged at intake, using the newer data.
 :::
 
-<!-- Update this summary once the model results are written up. -->
+<!-- Update this summary once the death and euthanasia models and the risk-flag test are written up. -->
 
 ## Why this matters
 
@@ -575,6 +577,8 @@ Neonatal and nursing animals mostly leave by transfer to another organization (6
 
 Age, condition, and intake type overlap: kittens often arrive as neonates, older animals often arrive sick, and strays can be reclaimed while surrendered animals mostly cannot. To separate them, I fit a Cox regression model for each outcome, separately for dogs and cats. Each model estimates how much a factor changes the rate of an outcome (a **hazard ratio**) while holding the other factors equal. For adoption, an animal that leaves another way, such as being reclaimed or transferred, stops being at risk of adoption. Repeat visits by the same animal are grouped together so that the uncertainty estimates are not too narrow.
 
+The first chart below shows the average effect of each factor over the whole stay. Because the effects change during a stay, the section after it splits them by phase.
+
 ```{r}
 stays_model <- stays_clean |>
   filter(outcome_group != "Unknown outcome", !is.na(age_group)) |>
@@ -648,7 +652,7 @@ hr_all <- bind_rows(
 ```{r}
 #| echo: false
 #| fig-height: 7
-#| fig-cap: "Hazard ratios with 95% confidence intervals. The dashed line at 1 means no difference from the reference group. Estimates for 'Sex: unknown unknown' fall outside the plotted range because that group is small and unusual. Source: Austin Animal Center."
+#| fig-cap: "Hazard ratios with 95% confidence intervals. The dashed line at 1 means no difference from the reference group. The estimate for cats of unknown sex falls below the plotted range. Source: Austin Animal Center."
 
 hr_all |>
   filter(outcome == "Adopted") |>
@@ -660,16 +664,84 @@ hr_all |>
   scale_x_log10(breaks = c(0.25, 0.5, 1, 2, 4)) +
   coord_cartesian(xlim = c(0.2, 2)) +
   scale_colour_manual(values = species_colors) +
-  labs(title = "What speeds up or slows down adoption?",
+  labs(title = "Average effect over the whole stay (read with caution)",
        subtitle = "Rate of adoption compared with the reference group (more than 1 = faster)",
        x = "Hazard ratio (log scale)", y = NULL, colour = NULL)
 ```
 
 Each dot shows how much faster (to the right of the dashed line) or slower (to the left) animals in that group are adopted than the reference group, among animals still waiting and with the other factors in the model held equal. The reference groups are age 8 weeks to 1 year, normal condition, intact females, strays, arriving without a name, and arriving before 2020. A line that crosses the dashed line means the data cannot distinguish that group from its reference group.
 
-::: {.callout-note}
-**Work in progress.** Written findings from these models, including the models of death or euthanasia, will go here once the assumption checks in the appendix are complete.
-:::
+Because these effects change during a stay (see the appendix), the next chart splits them by phase.
+
+### Effects change over the stay
+
+The check in the appendix shows that the effect of almost every factor changes during a stay, so one hazard ratio per factor hides the story. Below, the same model is fit separately for three phases of a stay: the first two weeks, weeks three to eight, and everything after eight weeks. Each phase only includes animals still waiting at its start.
+
+```{r}
+# The three phases of a stay (in days since arrival)
+windows <- tibble(window = c("Days 0 to 14", "Days 15 to 56", "Day 57 onward"),
+                  from   = c(0, 14, 56),
+                  to     = c(14, 56, Inf))
+
+# Fit the model for one phase, following only animals still waiting at its start
+fit_window <- function(data, event_label, from, to) {
+  data |>
+    mutate(t = los_days + 0.5) |>   # half a day added so same-day outcomes can be used
+    filter(t > from) |>
+    mutate(tstart = from,
+           tstop  = pmin(t, to),
+           status = outcome_group == event_label & t <= to) |>
+    coxph(Surv(tstart, tstop, status) ~ age_group + condition_model +
+            sex_fixed + intake_type + has_own_name + era + cluster(animal_id),
+          data = _)
+}
+
+# Fit all three phases for one species and outcome, and collect the results
+fit_windows <- function(data, species, event_label) {
+  pmap(windows, function(window, from, to) {
+    fit_window(data, event_label, from, to) |>
+      broom::tidy(exponentiate = TRUE, conf.int = TRUE) |>
+      mutate(species = species, window = window)
+  }) |>
+    bind_rows()
+}
+
+hr_windows <- bind_rows(
+  fit_windows(dogs, "Dog", "Adopted"),
+  fit_windows(cats, "Cat", "Adopted")
+) |>
+  label_terms() |>
+  mutate(window = factor(window, levels = windows$window))
+```
+
+```{r}
+#| echo: false
+#| fig-width: 11
+#| fig-height: 7
+#| fig-cap: "Hazard ratios for adoption in three phases of a stay, with 95% confidence intervals. The dashed line at 1 means no difference from the reference group. Source: Austin Animal Center."
+
+hr_windows |>
+  mutate(label = factor(label, levels = rev(unique(label)))) |>
+  ggplot(aes(x = estimate, y = label, colour = species)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high),
+                  position = position_dodge(width = 0.6), size = 0.3) +
+  facet_wrap(~ window) +
+  scale_x_log10(breaks = c(0.1, 0.25, 0.5, 1, 2, 4)) +
+  coord_cartesian(xlim = c(0.03, 6)) +
+  scale_colour_manual(values = species_colors) +
+  labs(title = "What speeds up or slows down adoption, by phase of the stay",
+       subtitle = "Rate of adoption compared with the reference group (more than 1 = faster)",
+       x = "Hazard ratio (log scale)", y = NULL, colour = NULL)
+```
+
+<!-- Check the numbers in the next three paragraphs against the table "Model results in full" in the appendix before publishing. -->
+
+The effects of age and condition change during a stay, and in some cases reverse. Compared with animals 8 weeks to 1 year old, older animals are adopted more slowly in every phase, but the gap narrows: in the first two weeks animals over 5 years old are adopted at roughly a quarter to a half of the reference rate, and after eight weeks at roughly 70% to 80%. Animals under 8 weeks old at arrival are adopted much more slowly at first (about a quarter of the reference rate for kittens), but among animals still waiting after eight weeks they are adopted faster than the reference group, about three times as fast for dogs and 1.6 times as fast for cats.
+
+Injured animals are adopted at roughly a quarter to a third of the rate of animals in normal condition during the first two weeks, in both species. The gap narrows to about two thirds in weeks 3 to 8, and after eight weeks injured dogs are adopted at close to the normal rate. Neonatal and nursing animals are barely adopted in the first two weeks and at about a third of the normal rate in weeks 3 to 8, but neonatal dogs still waiting after eight weeks are adopted faster than normal. These estimates describe animals still waiting, so they leave out the many animals that were transferred or died earlier.
+
+Animals that arrive with a name are adopted faster in every phase (roughly 1.3 to 1.7 times as fast in the first eight weeks), and sex and spay/neuter status have small effects. Public assist intakes are adopted much more slowly than strays in the first two weeks, especially dogs, and the data cannot say why. Since 2020, dogs have been adopted more slowly in the first two weeks than before, while cats have been adopted slightly faster. These are associations, not proof of cause: for example, a name probably signals a pet that came from a home.
 
 ## Limitations
 
@@ -682,7 +754,7 @@ Each dot shows how much faster (to the right of the dashed line) or slower (to t
 - **Some grouping choices are assumptions.** For example, "rto-adopt" is treated as return to owner, and died and euthanized are combined.
 - **Only intake information is used.** Things that happen during a stay (behavior, medical treatment, marketing) are not in the data.
 - **Reclaims and arrival type overlap.** Animals that arrive as strays can be claimed by their owners, but animals surrendered by an owner generally cannot, so intake type affects how stays end and has to be accounted for in the model.
-- **Model assumptions.** The models assume each factor's effect is constant over the stay. The curves suggest this is not exactly true, for example for kittens under 8 weeks, so the hazard ratios are average effects over the whole stay (see the appendix check). In the adoption models, animals that leave another way are treated as no longer available for adoption, so the results describe animals still waiting, not all arrivals.
+- **Model assumptions.** The proportional hazards check shows that the effect of almost every factor changes during a stay, so the main results are estimated separately for three phases of the stay (days 0 to 14, 15 to 56, and 57 onward). The single-model estimates are averages and should be read with that in mind. In the adoption models, animals that leave another way are treated as no longer available for adoption, so the results describe animals still waiting, not all arrivals.
 
 ## Appendix: data checks
 
@@ -838,6 +910,8 @@ stays_model |>
 
 The models assume each factor has the same effect throughout the stay. This check tests that and plots how each effect changes over time. With this many animals, the test flags even tiny departures, so the plots matter more than the p-values: a flat line means the effect is steady, and a sloping or curving line means it changes during the stay. The check uses the same models without the repeat-visit grouping, which affects only the confidence intervals and not how effects change over time.
 
+Result: for cats, every factor except period fails the test, and for dogs every factor does. The plots show large changes in effect over the stay, so the main results are estimated separately for three phases of the stay.
+
 ```{r}
 fit_zph_cat <- coxph(Surv(los_days, outcome_group == "Adopted") ~
                        age_group + condition_model + sex_fixed +
@@ -866,7 +940,7 @@ zph_table(zph_cat)
 
 ```{r}
 #| fig-height: 6
-#| fig-cap: "Cats: how each factor's effect on adoption changes over the stay (first six terms: three age groups, then three conditions). A flat line means a steady effect."
+#| fig-cap: "How each factor's effect on adoption changes over the stay: age, condition, sex, intake type, arriving with a name, and period. A flat line would mean a steady effect. For factors with several levels, each panel combines the levels, so read the shape of the line, not the values."
 
 par(mfrow = c(2, 3))
 for (i in 1:6) plot(zph_cat, var = i, resid = FALSE)
@@ -880,8 +954,22 @@ zph_table(zph_dog)
 
 ```{r}
 #| fig-height: 6
-#| fig-cap: "Dogs: how each factor's effect on adoption changes over the stay (first six terms: three age groups, then three conditions). A flat line means a steady effect."
+#| fig-cap: "How each factor's effect on adoption changes over the stay: age, condition, sex, intake type, arriving with a name, and period. A flat line would mean a steady effect. For factors with several levels, each panel combines the levels, so read the shape of the line, not the values."
 
 par(mfrow = c(2, 3))
 for (i in 1:6) plot(zph_dog, var = i, resid = FALSE)
+```
+
+### Model results in full
+
+Hazard ratios for adoption, with 95% confidence intervals in brackets, for each phase of the stay.
+
+```{r}
+hr_windows |>
+  mutate(result = sprintf("%.2f (%.2f to %.2f)", estimate, conf.low, conf.high)) |>
+  select(species, label, window, result) |>
+  pivot_wider(names_from = window, values_from = result) |>
+  knitr::kable(col.names = c("Species", "Factor", "Days 0 to 14",
+                             "Days 15 to 56", "Day 57 onward"),
+               align = c("l", "l", "r", "r", "r"))
 ```
