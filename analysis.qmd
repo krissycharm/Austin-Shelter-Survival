@@ -735,13 +735,17 @@ hr_windows |>
        x = "Hazard ratio (log scale)", y = NULL, colour = NULL)
 ```
 
-<!-- Check the numbers in the next three paragraphs against the table "Model results in full" in the appendix before publishing. -->
+The effects of age and condition change during a stay, and in some cases reverse. Compared with animals 8 weeks to 1 year old, older animals are adopted more slowly in every phase, but the gap narrows. In the first two weeks, animals over 5 years old are adopted at about a quarter (cats) to a third (dogs) of the reference rate, and animals aged 1 to 5 years at about 40% to 50%. After eight weeks the rates are about 70% (over 5 years) and 80% to 85% (1 to 5 years) of the reference rate.
 
-The effects of age and condition change during a stay, and in some cases reverse. Compared with animals 8 weeks to 1 year old, older animals are adopted more slowly in every phase, but the gap narrows: in the first two weeks animals over 5 years old are adopted at roughly a quarter to a half of the reference rate, and after eight weeks at roughly 70% to 80%. Animals under 8 weeks old at arrival are adopted much more slowly at first (about a quarter of the reference rate for kittens), but among animals still waiting after eight weeks they are adopted faster than the reference group, about three times as fast for dogs and 1.6 times as fast for cats.
+Animals under 8 weeks old at arrival follow a different pattern. In the first two weeks kittens are adopted at about a quarter of the reference rate and puppies at about three quarters. In weeks 3 to 8 kittens are still slower (about two thirds of the reference rate) while puppies are about 1.2 times as fast. Among animals still waiting after eight weeks, puppies are adopted about three times as fast as the reference group and kittens about 1.5 times as fast.
 
-Injured animals are adopted at roughly a quarter to a third of the rate of animals in normal condition during the first two weeks, in both species. The gap narrows to about two thirds in weeks 3 to 8, and after eight weeks injured dogs are adopted at close to the normal rate. Neonatal and nursing animals are barely adopted in the first two weeks and at about a third of the normal rate in weeks 3 to 8, but neonatal dogs still waiting after eight weeks are adopted faster than normal. These estimates describe animals still waiting, so they leave out the many animals that were transferred or died earlier.
+Injured animals are adopted at about 30% of the rate of animals in normal condition during the first two weeks, in both species. The gap narrows to about two thirds in weeks 3 to 8. After eight weeks injured dogs are adopted slightly faster than dogs in normal condition (1.13 times as fast), while injured cats are still about 15% slower. Sick or medical animals show a similar early gap (about half the normal rate for dogs and about a third for cats). For dogs it disappears after the first two weeks, but for cats it persists at about 80% of the normal rate.
 
-Animals that arrive with a name are adopted faster in every phase (roughly 1.3 to 1.7 times as fast in the first eight weeks), and sex and spay/neuter status have small effects. Public assist intakes are adopted much more slowly than strays in the first two weeks, especially dogs, and the data cannot say why. Since 2020, dogs have been adopted more slowly in the first two weeks than before, while cats have been adopted slightly faster. These are associations, not proof of cause: for example, a name probably signals a pet that came from a home.
+Neonatal and nursing animals are barely adopted in the first two weeks (5% to 10% of the normal rate) and are adopted at about a third of the normal rate in weeks 3 to 8. After eight weeks, neonatal dogs still waiting are adopted about 1.6 times as fast as dogs in normal condition, while neonatal cats do not differ from normal. These estimates describe animals still waiting, so they leave out the many animals that were transferred or died earlier.
+
+Animals that arrive with a name are adopted faster in every phase: about 1.3 to 1.7 times as fast in the first eight weeks and about 14% faster after that. Owner surrenders are adopted faster than strays in the first two weeks (about 1.4 times as fast for cats and 1.1 times for dogs) but not afterwards, and for dogs somewhat more slowly (about 10% to 15%). Public assist intakes are adopted far more slowly than strays in the first two weeks, especially dogs (13% of the stray rate for dogs, 35% for cats). Dogs stay about a third slower afterwards, while cats do not differ.
+
+Sex and spay/neuter status have smaller effects. Compared with intact females, other groups of dogs are adopted up to about 20% more slowly. Cats are within about 15% in the first eight weeks, with spayed and neutered cats about 20% to 30% slower after that. Since 2020, cats have been adopted about 15% to 20% faster in every phase, while dogs were adopted about a third more slowly in the first two weeks and have not differed much since. These are associations, not proof of cause: for example, a name probably signals a pet that came from a home.
 
 ## Limitations
 
@@ -972,4 +976,14 @@ hr_windows |>
   knitr::kable(col.names = c("Species", "Factor", "Days 0 to 14",
                              "Days 15 to 56", "Day 57 onward"),
                align = c("l", "l", "r", "r", "r"))
+```
+
+```{r}
+stays_model |>
+  filter(sex_fixed == "unknown unknown") |>
+  count(animal_type, outcome_group, sort = TRUE)
+
+stays_model |>
+  filter(sex_fixed == "unknown unknown") |>
+  count(animal_type, age_group)
 ```
