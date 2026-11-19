@@ -1,37 +1,103 @@
 /*-- scss:defaults --*/
 $primary: #2F6F6A;
-$headings-font-weight: 700;
+$secondary: #E08E45;
+$body-color: #1E293B;
+$link-color: #2F6F6A;
 
 /*-- scss:rules --*/
+body {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.65;
+  color: #1E293B;
+}
+
 h1.title {
   font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0F172A;
+  margin-bottom: 0.25rem;
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  color: #475569;
+  font-weight: 400;
+  margin-bottom: 1.5rem;
 }
 
 h2 {
-  margin-top: 2.5rem;
+  font-weight: 700;
+  color: #0F172A;
+  border-bottom: 2px solid #E2E8F0;
   padding-bottom: 0.35rem;
-  border-bottom: 2px solid rgba($primary, 0.25);
+  margin-top: 2.25rem;
 }
 
 h3 {
-  margin-top: 1.8rem;
-  color: $primary;
+  font-weight: 600;
+  color: #1E293B;
+  margin-top: 1.6rem;
 }
 
-table.table {
-  width: auto;
-  min-width: 50%;
-  font-size: 0.95rem;
-  margin: 1rem 0 1.75rem;
+/* KPI Summary Cards */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 2rem 0;
 }
 
-table.table thead th {
-  background-color: $primary;
-  color: #ffffff;
-  border-bottom: none;
-  padding: 0.6rem 0.9rem;
+.kpi-card {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-top: 4px solid #2F6F6A;
+  border-radius: 6px;
+  padding: 1rem 1.2rem;
 }
 
-table.table tbody td {
-  padding: 0.5rem 0.9rem;
+.kpi-card:nth-child(2) {
+  border-top-color: #E08E45;
+}
+
+.kpi-number {
+  display: block;
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: #0F172A;
+  line-height: 1.2;
+}
+
+.kpi-label {
+  display: block;
+  font-size: 0.88rem;
+  color: #475569;
+  margin-top: 0.25rem;
+}
+
+/* Clean Editorial Tables */
+table {
+  font-size: 0.92rem;
+  margin: 1.25rem 0;
+}
+
+thead th {
+  background-color: #F1F5F9 !important;
+  color: #0F172A !important;
+  font-weight: 700;
+  border-bottom: 2px solid #CBD5E1 !important;
+}
+
+tbody tr:hover {
+  background-color: #F8FAFC;
+}
+
+/* Callout Polish */
+.callout-note {
+  border-left-color: #2F6F6A !important;
+  background-color: #F8FAFC;
+}
+
+.callout-tip {
+  border-left-color: #E08E45 !important;
+  background-color: #FFFBEB;
 }
