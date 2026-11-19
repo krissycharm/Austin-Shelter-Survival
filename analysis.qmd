@@ -75,7 +75,9 @@ Age and condition shape where animals go as much as how fast: nearly half of dog
 
 The importance of age and condition changes during a stay: injured and neonatal animals are adopted far more slowly in the first weeks, but among those still waiting after eight weeks the gap narrows or disappears.
 
-**Still to come.** Written findings from the models of death or euthanasia, and a test of whether animals at high risk can be flagged at intake, using the newer data.
+Condition at arrival is the strongest signal of death or euthanasia: in the first two weeks, injured and sick animals die or are euthanized at about 13 to 17 times the rate of animals in normal condition, and for cats the gap persists after two weeks while for dogs it does not.
+
+**Still to come.** A test of whether animals at high risk can be flagged at intake, using later years held out of the model.
 :::
 
 <!-- Update this summary once the death and euthanasia models and the risk-flag test are written up. -->
@@ -788,8 +790,104 @@ hr_death_windows |>
        x = "Hazard ratio (log scale)", y = NULL, colour = NULL)
 ```
 
+Condition at arrival is by far the strongest signal in the first two weeks. Injured and sick dogs die or are euthanized at about 13 times the rate of dogs in normal condition (13.0 and 12.5 times), and injured and sick cats at 14 to 17 times the rate (17.5 for injured, 14.0 for sick). After the first two weeks the species differ: among dogs still in the shelter, injured and sick animals no longer differ clearly from those in normal condition (0.95 and 1.36, with intervals that include 1), while injured and sick cats still die or are euthanized at about 2.5 to 2.9 times the normal rate.
+
+Older animals are at higher risk in both phases. In the first two weeks, dogs over 5 years old are 4.2 times and cats 3.2 times as likely as animals 8 weeks to 1 year old to die or be euthanized, and animals aged 1 to 5 years about 2 times (dogs) and 1.6 times (cats). After two weeks, cats over 5 years old have the highest risk of any age group, at 4.7 times the reference rate, while dogs over 5 and dogs aged 1 to 5 are both at about 2 times. Puppies under 8 weeks are at slightly higher early risk (1.6 times) and no different later, while kittens under 8 weeks are at 1.15 times early and 2.1 times later.
+
+How an animal arrives also matters. Owner-surrendered dogs have 2.8 times the early rate of strays, while owner-surrendered cats have a lower rate (0.73 times). Dogs brought in through public assist are only slightly higher early (1.3 times) but have 5.7 times the rate of strays among those still in the shelter after two weeks, the largest later-stay effect for dogs; the data cannot say why. Animals that arrive with a name have lower early rates (about 0.6 times for dogs and 0.5 for cats), and this persists for cats afterwards (0.5 times) but not for dogs. Compared with intact females, spayed females have lower early risk (0.57 times for dogs and 0.74 for cats), and rates since 2020 are lower for both species and both phases (0.4 to 0.6 times).
+
+Animals whose sex was not recorded have very high ratios (8.2 times for dogs and 4.3 for cats early on, and 38 times for cats after two weeks). As described in the appendix, this group is mostly very young animals that were transferred out, so these ratios are better read as a flag about how these records were created than as a risk factor the animal has.
+
+These are associations, not causes. Euthanasia reflects decisions made by the shelter as well as the condition of the animal, so a higher rate does not mean an outcome was unavoidable or avoidable. Estimates for the period after two weeks rest on fewer deaths and have wider intervals.
+
+## Can high-risk animals be flagged at intake?
+
+To test whether the shelter could flag high-risk animals when they arrive, I fit a logistic regression model that predicts whether an animal will die or be euthanized within 14 days of arrival. The model uses only information known at intake. It was fit on stays that began before 2022 and tested on stays from 2022 to April 2025, which the model never saw.
+
+```{r}
+# Only stays old enough for a 14-day outcome to be known
+risk_data <- stays_model |>
+  filter(intake_date <= data_cutoff - 14) |>
+  mutate(poor = as.integer(outcome_group == "Died or euthanized" & los_days <= 14))
+
+# Train on the earlier years, test on the later years the model has never seen
+train <- risk_data |> filter(intake_date <  as_date("2022-01-01"))
+test  <- risk_data |> filter(intake_date >= as_date("2022-01-01"))
+
+risk_fit <- glm(poor ~ animal_type * (age_group + condition_model + intake_type) +
+                  sex_fixed + has_own_name + era,
+                data = train, family = binomial)
+
+test <- test |>
+  mutate(risk = predict(risk_fit, newdata = test, type = "response"))
+```
+```{r}
+# AUC: the chance that a random animal with a poor outcome got a higher risk score
+# than a random animal without one (0.5 = coin flip, 1 = perfect)
+auc <- function(score, truth) {
+  r  <- rank(score)
+  n1 <- sum(truth == 1)
+  n0 <- sum(truth == 0)
+  (sum(r[truth == 1]) - n1 * (n1 + 1) / 2) / (n1 * n0)
+}
+
+auc_all <- auc(test$risk, test$poor)
+auc_dog <- auc(test$risk[test$animal_type == "Dog"], test$poor[test$animal_type == "Dog"])
+auc_cat <- auc(test$risk[test$animal_type == "Cat"], test$poor[test$animal_type == "Cat"])
+
+# How many poor outcomes does a flagging rule catch, and how many flags are wasted?
+score_rule <- function(is_flagged, label) {
+  tibble(rule = label,
+         flagged = sum(is_flagged),
+         share_flagged = mean(is_flagged),
+         caught = sum(is_flagged & test$poor == 1),
+         share_caught = caught / sum(test$poor),
+         precision = caught / flagged)
+}
+
+risk_summary <- bind_rows(
+  score_rule(test$condition_model %in% c("Injured", "Sick or medical"),
+             "Flag every injured or sick animal"),
+  score_rule(test$risk >= quantile(test$risk, 0.95), "Flag the top 5% by model risk"),
+  score_rule(test$risk >= quantile(test$risk, 0.90), "Flag the top 10% by model risk"),
+  score_rule(test$risk >= quantile(test$risk, 0.80), "Flag the top 20% by model risk")
+)
+
+auc_all
+auc_dog
+auc_cat
+```
+
+```{r}
+#| echo: false
+
+risk_summary |>
+  mutate(across(c(share_flagged, share_caught, precision),
+                \(x) scales::percent(x, accuracy = 0.1)),
+         flagged = scales::comma(flagged),
+         caught  = scales::comma(caught)) |>
+  knitr::kable(col.names = c("Rule", "Animals flagged", "Share of all animals",
+                             "Poor outcomes caught", "Share of poor outcomes caught",
+                             "Share of flags that were right"),
+               align = c("l", "r", "r", "r", "r", "r"))
+```
+
+```{r}
+#| echo: false
+
+test |>
+  mutate(decile = ntile(risk, 10)) |>
+  group_by(decile) |>
+  summarise(animals = n(), predicted = mean(risk), observed = mean(poor),
+            .groups = "drop") |>
+  mutate(across(c(predicted, observed), \(x) scales::percent(x, accuracy = 0.1))) |>
+  knitr::kable(col.names = c("Risk group (1 = lowest, 10 = highest)", "Animals",
+                             "Average predicted risk", "Actual share with a poor outcome"),
+               align = c("l", "r", "r", "r"))
+```
+
 ::: {.callout-note}
-**Work in progress.** Written findings from the death and euthanasia models will go here once the results have been reviewed.
+**Work in progress.** Findings will go here once the results have been reviewed.
 :::
 
 ## Limitations
@@ -805,6 +903,7 @@ hr_death_windows |>
 - **Reclaims and arrival type overlap.** Animals that arrive as strays can be claimed by their owners, but animals surrendered by an owner generally cannot, so intake type affects how stays end and has to be accounted for in the model.
 - **Missing sex.** About 3.5% of stays have no recorded sex, and almost none of these animals were adopted. The reason is not recorded, so adoption results for these animals cannot be interpreted.
 - **Model assumptions.** The proportional hazards check shows that the effect of almost every factor changes during a stay, so the main results are estimated separately for three phases of the stay (days 0 to 14, 15 to 56, and 57 onward). The single-model estimates are averages and should be read with that in mind. In the adoption models, animals that leave another way are treated as no longer available for adoption, so the results describe animals still waiting, not all arrivals.
+- **Euthanasia reflects decisions.** Whether an animal is euthanized depends on shelter policy, capacity, and staff judgment as well as on the animal, so the death and euthanasia models describe patterns, not avoidable or unavoidable cases.
 
 ## Appendix: data checks
 
