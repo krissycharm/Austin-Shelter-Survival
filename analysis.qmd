@@ -845,18 +845,25 @@ score_rule <- function(is_flagged, label) {
          precision = caught / flagged)
 }
 
+simple_flag <- test$condition_model %in% c("Injured", "Sick or medical")
+
 risk_summary <- bind_rows(
-  score_rule(test$condition_model %in% c("Injured", "Sick or medical"),
-             "Flag every injured or sick animal"),
+  score_rule(simple_flag, "Flag every injured or sick animal"),
+  score_rule(test$risk >= quantile(test$risk, 1 - mean(simple_flag)),
+             "Model: flag the same number of animals"),
   score_rule(test$risk >= quantile(test$risk, 0.95), "Flag the top 5% by model risk"),
   score_rule(test$risk >= quantile(test$risk, 0.90), "Flag the top 10% by model risk"),
   score_rule(test$risk >= quantile(test$risk, 0.80), "Flag the top 20% by model risk")
 )
-
-auc_all
-auc_dog
-auc_cat
 ```
+
+```{r}
+test |>
+  filter(risk >= quantile(risk, 0.95)) |>
+  count(animal_type, condition_model, unknown_sex = sex_fixed == "unknown unknown",
+        sort = TRUE)
+```
+
 
 ```{r}
 #| echo: false
@@ -886,9 +893,11 @@ test |>
                align = c("l", "r", "r", "r"))
 ```
 
-::: {.callout-note}
-**Work in progress.** Findings will go here once the results have been reviewed.
-:::
+The model ranks animals well. On stays it had never seen, its AUC was 0.83 overall (0.80 for dogs and 0.83 for cats), meaning that an animal that died or was euthanized within two weeks was given a higher risk score than one that was not about 83% of the time. Its predictions also match what happened: among the 10% of animals it rated highest, it predicted a 16.4% chance of a poor outcome and 13.9% actually had one, and in the lower groups its predictions were within about one percentage point.
+
+These outcomes are rare. In the test years, `r scales::percent(mean(test$poor), accuracy = 0.1)` of the `r format(nrow(test), big.mark = ",")` stays ended in death or euthanasia within two weeks, so even a good model produces many false alarms. Flagging the top 5% of animals by predicted risk catches 39% of the poor outcomes, and 18.5% of those flags were right (about 7 times the overall rate). Flagging the top 20% catches 72%, but only 8.6% of flags were right.
+
+A simple rule is a strong baseline. Flagging every injured or sick animal (14% of arrivals) catches 64% of poor outcomes, and 11.1% of those flags were right. When the model flags the same number of animals, it catches `r scales::percent(risk_summary$share_caught[2], accuracy = 0.1)` and `r scales::percent(risk_summary$precision[2], accuracy = 0.1)` of its flags were right.
 
 ## Limitations
 
