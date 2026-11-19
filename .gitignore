@@ -3,7 +3,7 @@ data/
 .RData
 .vdoc.*
 .quarto/
-*.html
+analysis.html
 *_files/
 *.pdf
 .Rproj.user/
