@@ -40,10 +40,3 @@ Data is sourced from the [City of Austin Open Data Portal](https://data.austinte
 
 ---
 
-## Repository Structure
-
-```text
-├── data/               # Raw and processed intake/outcome files (excluded or linked via Open Data Portal)
-├── scripts/            # R scripts for data cleaning, stay matching, survival modeling, and validation
-├── report/             # Quarto (.qmd) source and rendered HTML/PDF analysis report
-└── README.md
