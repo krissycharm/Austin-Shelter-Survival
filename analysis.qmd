@@ -88,18 +88,18 @@ theme_set(
 ::: {.callout-note appearance="simple"}
 **Research Question.** Which animal characteristics and intake conditions drive length of stay and shelter outcomes at the Austin Animal Center? Can high-risk animals be flagged at intake—using only information known at the door—early enough for staff to intervene?
 
-**Data Scope.** 163,653 cleaned dog and cat stays (94,397 dogs and 69,256 cats) from October 2013 to May 2025 via the City of Austin Open Data Portal, with 19,547 newer-schema intakes (May 2025–November 2026) held out for future cross-schema validation.
+**Data Scope.** 163,653 cleaned dog and cat stays (94,397 dogs and 69,256 cats) from October 2013 to May 2025 via the City of Austin Open Data Portal, plus 19,547 newer-schema intakes (May 2025–November 2026) used for cross-schema validation.
 
 **Key Findings.**
 
-* **Species exit through different pathways:** Roughly half of both species are adopted (50% of dogs, 51% of cats), but **25% of dogs are reclaimed by an owner** (versus 4% of cats), while **38% of cats are transferred** to rescue partners (versus 22% of dogs).
-* **Dogs are adopted faster initially, but cats catch up:** Within 7 days, 22% of dog stays end in adoption compared to 13% of cat stays. By day 90, cumulative adoption shares converge at 46% to 47%.
-* **Arrival condition is the strongest signal of mortality:** In the first two weeks, injured and sick animals die or are euthanized at **13 to 17 times the rate** of animals arriving in normal condition. Nearly **29% of injured cats** and **22% of sick cats** die or are euthanized, compared to 12% and 11% of dogs, and under 3% of animals arriving in normal condition.
-* **Age reshapes exit pathways:** Animals aged 8 weeks to 1 year are adopted fastest. Among dogs over 5 years old, lower adoption shares (24.4%) reflect high owner-reclaim rates (46.1%) as much as longer waits. Most neonatal and nursing animals exit via partner transfers (68.9% of cats, 53.0% of dogs).
-* **Factor effects shift over the course of a stay:** Time-varying Cox models show that injured and neonatal animals are adopted far more slowly during their first two weeks, but among those still waiting past week eight, the gap narrows or reverses (puppies under 8 weeks at intake are adopted nearly **3x faster** once they reach adoptable age).
-* **Intake risk scoring vs. simple triage rules:** A logistic regression model trained on pre-2022 intakes achieves an **AUC of 0.83** on unseen 2022–2025 arrivals when predicting death or euthanasia within 14 days. At the same alert volume (~14% of intakes), the model catches **66.1%** of poor outcomes compared to **64.4%** caught by a simple rule flagging every injured or sick animal.
+- **Species exit through different pathways:** Roughly half of both species are adopted (50% of dogs, 51% of cats), but **25% of dogs are reclaimed by an owner** (versus 4% of cats), while **38% of cats are transferred** to rescue partners (versus 22% of dogs).
+- **Dogs are adopted faster initially, but cats catch up:** Within 7 days, 22% of dog stays end in adoption compared to 13% of cat stays. By day 90, cumulative adoption shares converge at 46% to 47%.
+- **Arrival condition is the strongest signal of mortality:** In the first two weeks, injured and sick animals die or are euthanized at **13 to 17 times the rate** of animals arriving in normal condition. Nearly **29% of injured cats** and **22% of sick cats** die or are euthanized, compared to 12% and 11% of dogs, and under 3% of animals arriving in normal condition.
+- **Age reshapes exit pathways:** Animals aged 8 weeks to 1 year are adopted fastest. Among dogs over 5 years old, lower adoption shares (24.4%) reflect high owner-reclaim rates (46.1%) as much as longer waits. Most neonatal and nursing animals exit via partner transfers (68.9% of cats, 53.0% of dogs).
+- **Factor effects shift over the course of a stay:** Time-varying Cox models show that injured and neonatal animals are adopted far more slowly during their first two weeks, but among those still waiting past week eight, the gap narrows or reverses (puppies under 8 weeks at intake are adopted nearly **3x faster** once they reach adoptable age).
+- **Intake risk scoring vs. simple triage rules:** A logistic regression model trained on pre-2022 intakes achieves an **AUC of 0.83** on unseen 2022–2025 arrivals when predicting death or euthanasia within 14 days. At the same alert volume (~14% of intakes), the model catches **66.1%** of poor outcomes compared to **64.4%** caught by a simple rule flagging every injured or sick animal.
 
-**Next Steps.** Map fields from the post-May 2025 Austin Animal Center schema to evaluate model drift and test intake risk scoring on late-2025 and 2026 arrivals.
+**Future Work.** Incorporate breed and size text features and explore multi-state competing-risks models to estimate expected kennel-days saved per early foster intervention.
 :::
 
 ## Why This Matters
@@ -110,7 +110,7 @@ Animal shelters operate with finite kennel space, staff time, and medical budget
 
 Austin Animal Center publishes two datasets on the City of Austin Open Data Portal: **intakes** (animals arriving) and **outcomes** (animals leaving). Each exists in two formats. In May 2025 the published schema changed—introducing new column names and a new animal ID format—so the two periods cannot simply be stacked together.
 
-The main analysis covers **October 2013 to May 2025**. The newer files are reserved to test out-of-sample generalization once schema mapping is complete.
+The primary analysis covers **October 2013 to May 2025**, while the newer **May 2025 to November 2026** files are mapped separately to test out-of-schema generalization.
 
 ```{r}
 #| echo: false
@@ -135,6 +135,8 @@ Each row in the intake file represents one arrival. To measure length of stay, I
 The source files store timestamps in mixed formats, so I standardized them to calendar dates and lowercased outcome labels so variations like `"Adoption"` and `"adoption"` are treated identically.
 
 ```{r}
+#| code-summary: "Show R code: date parsing and outcome standardization"
+
 # Helper: parse dates stored as text, dates, or date-times into plain Date objects
 to_date <- function(x) {
   if (inherits(x, c("Date", "POSIXt"))) {
@@ -165,6 +167,8 @@ outcomes_all <- outcomes_old_clean |>
 ### Reconstructing Individual Stays
 
 ```{r}
+#| code-summary: "Show R code: chronological intake-to-outcome matching"
+
 # Step 1: pair each intake with its chronologically next outcome
 matched <- intakes_old |>
   select(intake_id, animal_id, intake_date) |>
@@ -188,6 +192,8 @@ stays <- intakes_old |>
 ### Filtering to Companion Animals & Grouping Outcomes
 
 ```{r}
+#| code-summary: "Show R code: cohort filtering and outcome grouping"
+
 stays_clean <- stays |>
   filter(animal_type %in% c("Dog", "Cat")) |>
   filter(!intake_type %in% c("Euthanasia Request", "Wildlife")) |>
@@ -208,6 +214,8 @@ stays_clean <- stays |>
 To ensure the models reflect real-world triage at the shelter door, predictors are restricted strictly to attributes recorded upon arrival.
 
 ```{r}
+#| code-summary: "Show R code: intake-only feature engineering"
+
 stays_clean <- stays_clean |>
   mutate(
     # Age: convert text like "2 years" or "3 weeks" into numeric days
@@ -388,6 +396,8 @@ Injured and sick animals face dramatically higher mortality than healthy arrival
 Because an animal can exit via adoption, owner reclaim, transfer, or death/euthanasia, these outcomes act as **competing risks**. The cumulative incidence curves below show, for each day since arrival, the proportion of all intakes that have already exited via a specific pathway, treating stays still open on May 5, 2025 as right-censored.
 
 ```{r}
+#| code-summary: "Show R code: competing-risks cumulative incidence estimation"
+
 stays_cr <- stays_clean |>
   filter(outcome_group != "Unknown outcome") |>
   mutate(event = if_else(outcome_group == "Still in shelter",
@@ -456,6 +466,8 @@ cm_species |>
 ### Does Age at Arrival Matter?
 
 ```{r}
+#| code-summary: "Show R code: cumulative incidence by species and age group"
+
 cm_age <- cuminc(
   Surv(los_days, event) ~ species_age,
   data = stays_cr |>
@@ -505,10 +517,10 @@ cm_age |>
 
 Age at arrival strongly shapes both speed and destination, though patterns differ by species:
 
-* **Juveniles (8 weeks to 1 year):** Adopted fastest and most often in both species—**56.1%** of cats and **57.5%** of dogs within 90 days (**25.5%** and **32.4%** within week one).
-* **Older dogs:** Adoption share falls from **57.5%** (8 weeks–1 year) to **38.2%** (1–5 years) and **24.4%** (over 5 years), largely because owner reclaims climb from **17.3%** to **32.4%** to **46.1%**. Nearly half of senior dogs go home with their original owners.
-* **Older cats:** Adult cats (1–5 years and over 5 years) share similar 90-day adoption shares (~35%), but senior cats over 5 face the highest mortality risk (**11.9%** vs. 3.3%–7.0% for younger brackets).
-* **Neonates (< 8 weeks):** Puppies under 8 weeks are adopted briskly (**22.4%** within a week, **56.7%** by day 90). Kittens under 8 weeks start slowly (**5.4%** in week one) and reach **47.3%** by day 90, with **42.5%** transferred to partner organizations.
+- **Juveniles (8 weeks to 1 year):** Adopted fastest and most often in both species—**56.1%** of cats and **57.5%** of dogs within 90 days (**25.5%** and **32.4%** within week one).
+- **Older dogs:** Adoption share falls from **57.5%** (8 weeks–1 year) to **38.2%** (1–5 years) and **24.4%** (over 5 years), largely because owner reclaims climb from **17.3%** to **32.4%** to **46.1%**. Nearly half of senior dogs go home with their original owners.
+- **Older cats:** Adult cats (1–5 years and over 5 years) share similar 90-day adoption shares (~35%), but senior cats over 5 face the highest mortality risk (**11.9%** vs. 3.3%–7.0% for younger brackets).
+- **Neonates (< 8 weeks):** Puppies under 8 weeks are adopted briskly (**22.4%** within a week, **56.7%** by day 90). Kittens under 8 weeks start slowly (**5.4%** in week one) and reach **47.3%** by day 90, with **42.5%** transferred to partner organizations.
 
 *Note: Row shares below reflect cumulative incidence across all arrivals at day 90 and do not sum to 100% because some stays ended in other outcomes or remained open.*
 
@@ -535,6 +547,8 @@ cm_age |>
 ### Does Condition on Arrival Matter?
 
 ```{r}
+#| code-summary: "Show R code: cumulative incidence by species and intake condition"
+
 cm_cond <- cuminc(
   Surv(los_days, event) ~ species_cond,
   data = stays_cr |>
@@ -597,6 +611,8 @@ Intake variables overlap—kittens frequently arrive neonatal, older pets arrive
 In a cause-specific model, an animal exiting via a competing pathway (such as owner reclaim or transfer) is treated as right-censored for adoption at its exit time, estimating the instantaneous adoption rate among animals *still waiting in the shelter*. Repeat visits by the same animal are clustered (`cluster(animal_id)`) to produce robust standard errors.
 
 ```{r}
+#| code-summary: "Show R code: cause-specific Cox proportional hazards models"
+
 stays_model <- stays_clean |>
   filter(outcome_group != "Unknown outcome", !is.na(age_group)) |>
   mutate(
@@ -691,6 +707,8 @@ hr_all |>
 Schoenfeld residual diagnostics (see Appendix) show that nearly every covariate violates the proportional hazards assumption—meaning its effect changes substantially as a stay progresses. Averaging across the whole stay masks critical dynamics. Below, the models are stratified into three distinct phases: **Days 0–14**, **Days 15–56**, and **Day 57 onward**.
 
 ```{r}
+#| code-summary: "Show R code: piecewise time-varying Cox models for adoption"
+
 # Three phases of a shelter stay (in days since arrival)
 windows <- tibble(window = c("Days 0 to 14", "Days 15 to 56", "Day 57 onward"),
                   from   = c(0, 14, 56),
@@ -748,17 +766,19 @@ hr_windows |>
        x = "Hazard ratio (log scale)", y = NULL, colour = NULL)
 ```
 
-* **Age penalties fade—and reverse for juveniles:** Older animals are adopted more slowly across all phases, but the gap narrows over time. In weeks 1–2, animals over 5 are adopted at 24% (cats) to 37% (dogs) of the reference rate; past week 8, both reach ~69%. Conversely, animals arriving under 8 weeks old start slowly (HR = 0.24 for kittens, 0.75 for puppies in days 0–14) but reverse after day 56 once they mature into adoptable juveniles (HR = **2.95** for puppies, **1.55** for kittens).
-* **Medical delays are largely temporary:** Injured animals are adopted at ~28%–29% of the normal rate during the first two weeks, improving to ~64%–69% in weeks 3–8. Past day 56, injured dogs actually adopt slightly faster than healthy dogs (HR = **1.13**), while injured cats remain ~16% slower.
-* **Neonatal holds resolve after maturation:** Neonatal and nursing animals are rarely adopted in days 0–14 (HR = 0.05–0.09), but among those remaining past day 56, neonatal dogs adopt **1.57x faster** than normal-condition arrivals.
-* **Arriving with a name consistently accelerates adoption:** Named animals adopt 1.27x to 1.66x faster in the first eight weeks and ~14% faster afterward—likely serving as a proxy for prior home socialization.
-* **Unrecorded sex is an administrative flag:** Roughly 5,800 stays (3.5%) lack recorded sex at intake, and almost none were adopted (1 of 5,028 cats; 24 of 744 dogs). Most were neonates transferred out to rescue partners (85% of cats, 64% of dogs). They are excluded from the adoption plots above so they do not distort scale, though retained in the models.
+- **Age penalties fade—and reverse for juveniles:** Older animals are adopted more slowly across all phases, but the gap narrows over time. In weeks 1–2, animals over 5 are adopted at 24% (cats) to 37% (dogs) of the reference rate; past week 8, both reach ~69%. Conversely, animals arriving under 8 weeks old start slowly (HR = 0.24 for kittens, 0.75 for puppies in days 0–14) but reverse after day 56 once they mature into adoptable juveniles (HR = **2.95** for puppies, **1.55** for kittens).
+- **Medical delays are largely temporary:** Injured animals are adopted at ~28%–29% of the normal rate during the first two weeks, improving to ~64%–69% in weeks 3–8. Past day 56, injured dogs actually adopt slightly faster than healthy dogs (HR = **1.13**), while injured cats remain ~16% slower.
+- **Neonatal holds resolve after maturation:** Neonatal and nursing animals are rarely adopted in days 0–14 (HR = 0.05–0.09), but among those remaining past day 56, neonatal dogs adopt **1.57x faster** than normal-condition arrivals.
+- **Arriving with a name consistently accelerates adoption:** Named animals adopt 1.27x to 1.66x faster in the first eight weeks and ~14% faster afterward—likely serving as a proxy for prior home socialization.
+- **Unrecorded sex is an administrative flag:** Roughly 5,800 stays (3.5%) lack recorded sex at intake, and almost none were adopted (1 of 5,028 cats; 24 of 744 dogs). Most were neonates transferred out to rescue partners (85% of cats, 64% of dogs). They are excluded from the adoption plots above so they do not distort scale, though retained in the models.
 
 ### What Raises the Risk of Death or Euthanasia?
 
 Because non-live outcomes are concentrated early in a stay, this model is stratified into two phases: **Days 0–14** and **Day 15 onward**.
 
 ```{r}
+#| code-summary: "Show R code: piecewise Cox models for death or euthanasia"
+
 windows_death <- tibble(window = c("Days 0 to 14", "Day 15 onward"),
                         from   = c(0, 14),
                         to     = c(14, Inf))
@@ -792,15 +812,17 @@ hr_death_windows |>
        x = "Hazard ratio (log scale)", y = NULL, colour = NULL)
 ```
 
-* **Arrival condition dominates early mortality:** In the first 14 days, injured and sick dogs die or are euthanized at **13.0x** and **12.5x** the rate of healthy dogs, while injured and sick cats face **17.5x** and **14.0x** the risk of healthy cats. After day 14, surviving injured/sick dogs return to baseline risk (HR = 0.95 and 1.36, confidence intervals spanning 1.0), whereas injured and sick cats remain at elevated risk (HR = **2.50** and **2.87**).
-* **Senior animals face sustained vulnerability:** Animals over 5 years old experience 3.2x (cats) to 4.2x (dogs) higher mortality in the first two weeks, and senior cats remaining past day 14 face the highest age-related hazard in the shelter (HR = **4.70**).
-* **Intake pathway signals distinct risks:** Owner-surrendered dogs carry **2.76x** the early mortality risk of stray dogs, while public-assist dogs show a sharp late-stay spike after day 14 (HR = **5.67**). Conversely, animals arriving with a name—and animals entering post-2020—experience substantially lower mortality across both species.
+- **Arrival condition dominates early mortality:** In the first 14 days, injured and sick dogs die or are euthanized at **13.0x** and **12.5x** the rate of healthy dogs, while injured and sick cats face **17.5x** and **14.0x** the risk of healthy cats. After day 14, surviving injured/sick dogs return to baseline risk (HR = 0.95 and 1.36, confidence intervals spanning 1.0), whereas injured and sick cats remain at elevated risk (HR = **2.50** and **2.87**).
+- **Senior animals face sustained vulnerability:** Animals over 5 years old experience 3.2x (cats) to 4.2x (dogs) higher mortality in the first two weeks, and senior cats remaining past day 14 face the highest age-related hazard in the shelter (HR = **4.70**).
+- **Intake pathway signals distinct risks:** Owner-surrendered dogs carry **2.76x** the early mortality risk of stray dogs, while public-assist dogs show a sharp late-stay spike after day 14 (HR = **5.67**). Conversely, animals arriving with a name—and animals entering post-2020—experience substantially lower mortality across both species.
 
 ## Can High-Risk Animals Be Flagged at Intake?
 
 To test operational utility, I trained a multivariable logistic regression model on pre-2022 intakes (`train`) to predict whether an animal would die or be euthanized within 14 days of arrival, and evaluated its out-of-time performance on unseen 2022–2025 intakes (`test`, $n = 36,140$).
 
 ```{r}
+#| code-summary: "Show R code: logistic regression risk scoring and AUC evaluation"
+
 # Restrict to stays with at least 14 days of follow-up before cutoff
 risk_data <- stays_model |>
   filter(intake_date <= data_cutoff - 14) |>
@@ -900,9 +922,161 @@ test |>
                format.args = list(big.mark = ","))
 ```
 
-* **Strong discrimination:** On unseen 2022–2025 stays, the model achieves an overall **AUC of 0.83** (**0.80** for dogs and **0.83** for cats), meaning it assigns a higher risk score to an animal that dies or is euthanized within 14 days 83% of the time.
-* **Well-calibrated probabilities:** Across deciles 1 through 9, predicted probabilities align within roughly one percentage point of observed outcomes. In the highest-risk decile, the model predicts a **16.4%** risk against an observed **13.9%** rate.
-* **Precision-recall trade-off & baseline comparison:** Because early mortality is rare (**2.5%** of the 36,140 test stays), flagging the top 5% captures **39.4%** of poor outcomes with **18.5%** precision (more than 7x the base rate). Notably, a zero-model heuristic—flagging every injured or sick animal (14.3% of arrivals)—captures **64.4%** of poor outcomes at **11.1%** precision, nearly matching the full regression model at the same alert budget (**66.1%** recall, **11.3%** precision).
+- **Strong discrimination:** On unseen 2022–2025 stays, the model achieves an overall **AUC of 0.83** (**0.80** for dogs and **0.83** for cats), meaning it assigns a higher risk score to an animal that dies or is euthanized within 14 days 83% of the time.
+- **Well-calibrated probabilities:** Across deciles 1 through 9, predicted probabilities align within roughly one percentage point of observed outcomes. In the highest-risk decile, the model predicts a **16.4%** risk against an observed **13.9%** rate.
+- **Precision-recall trade-off & baseline comparison:** Because early mortality is rare (**2.5%** of the 36,140 test stays), flagging the top 5% captures **39.4%** of poor outcomes with **18.5%** precision (more than 7x the base rate). Notably, a zero-model heuristic—flagging every injured or sick animal (14.3% of arrivals)—captures **64.4%** of poor outcomes at **11.1%** precision, nearly matching the full regression model at the same alert budget (**66.1%** recall, **11.3%** precision).
+
+### Out-of-Schema Validation (May 2025 – November 2026)
+
+To verify that the intake risk model generalizes across the City of Austin's May 2025 data-schema overhaul, I mapped the 19,547 newer intakes to the legacy feature definitions and evaluated 14-day mortality predictions on live companion-animal arrivals with at least two weeks of follow-up.
+
+```{r}
+#| code-summary: "Show R code: post-May 2025 schema mapping and holdout scoring"
+
+# 1. Standardize timestamps and match new-schema intakes to outcomes
+intakes_new_clean <- intakes_new |>
+  mutate(
+    intake_id   = row_number(),
+    intake_date = to_date(source_date)
+  )
+
+outcomes_new_clean <- outcomes_new |>
+  transmute(
+    animal_id,
+    intake_date    = to_date(intake_date),
+    outcome_date   = to_date(outcome_date),
+    outcome_status = str_to_lower(outcome_status)
+  ) |>
+  distinct()
+
+new_cutoff <- max(intakes_new_clean$intake_date, na.rm = TRUE)
+
+stays_new <- intakes_new_clean |>
+  left_join(outcomes_new_clean, by = c("animal_id", "intake_date"),
+            relationship = "many-to-many") |>
+  group_by(intake_id) |>
+  slice_min(outcome_date, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  mutate(
+    still_in_shelter = is.na(outcome_date),
+    end_date = coalesce(outcome_date, new_cutoff),
+    los_days = as.numeric(end_date - intake_date)
+  )
+
+# 2. Map new-schema fields to legacy model predictors
+test_2025 <- stays_new |>
+  mutate(
+    animal_type = case_when(
+      type %in% c("Dog", "Puppy") ~ "Dog",
+      type %in% c("Cat", "Kitten") ~ "Cat",
+      TRUE ~ type
+    ),
+    cond_lower = str_to_lower(coalesce(intake_health_condition, "normal"))
+  ) |>
+  filter(
+    animal_type %in% c("Dog", "Cat"),
+    !str_detect(str_to_lower(coalesce(source_name, "")), "euthanasia|wildlife"),
+    cond_lower != "dead",
+    !coalesce(outcome_status, "") %in% c("doa"),
+    intake_date <= new_cutoff - 14
+  ) |>
+  mutate(
+    dob      = to_date(date_of_birth),
+    age_days = as.numeric(intake_date - dob),
+    age_days = if_else(age_days < 0, NA_real_, age_days),
+    age_group = cut(age_days,
+                    breaks = c(-Inf, 56, 365, 365 * 5, Inf),
+                    labels = c("Under 8 weeks", "8 weeks to 1 year",
+                               "1 to 5 years", "Over 5 years")),
+    age_group = relevel(age_group, ref = "8 weeks to 1 year"),
+
+    condition_model = case_when(
+      cond_lower == "normal"                        ~ "Normal",
+      cond_lower == "injured"                       ~ "Injured",
+      str_detect(cond_lower, "sick|med|parvo|neuro|agonal|congenital") ~ "Sick or medical",
+      str_detect(cond_lower, "neonat|nurs")         ~ "Neonatal or nursing",
+      TRUE                                          ~ "Other"
+    ),
+    condition_model = factor(condition_model,
+                             levels = c("Normal", "Injured", "Sick or medical",
+                                        "Neonatal or nursing", "Other")),
+
+    sex_clean = case_when(
+      str_to_lower(sex) == "female" ~ "female",
+      str_to_lower(sex) == "male"   ~ "male",
+      TRUE                          ~ "unknown"
+    ),
+    fixed_clean = case_when(
+      sex_clean == "unknown"                ~ "unknown",
+      is_previously_spayed_neutered == TRUE ~ "fixed",
+      TRUE                                  ~ "intact"
+    ),
+    sex_fixed = relevel(factor(paste(sex_clean, fixed_clean)), ref = "female intact"),
+
+    src_lower = str_to_lower(coalesce(source_name, "")),
+    intake_type = case_when(
+      str_detect(src_lower, "surrender") ~ "Owner Surrender",
+      str_detect(src_lower, "public")    ~ "Public Assist",
+      str_detect(src_lower, "abandon")   ~ "Abandoned",
+      TRUE                               ~ "Stray"
+    ),
+    intake_type = factor(intake_type,
+                         levels = c("Stray", "Owner Surrender",
+                                    "Public Assist", "Abandoned")),
+
+    has_own_name = !is.na(name) & !str_detect(name, fixed("*")),
+    era = "2020 to 2025",
+    poor = as.integer(str_detect(coalesce(outcome_status, ""), "euthan|death") & los_days <= 14)
+  ) |>
+  filter(!is.na(age_group))
+
+# 3. Score 2025–2026 intakes using the pre-2022 model
+test_2025 <- test_2025 |>
+  mutate(risk = predict(risk_fit, newdata = test_2025, type = "response"))
+
+auc_2025     <- auc(test_2025$risk, test_2025$poor)
+auc_2025_dog <- auc(test_2025$risk[test_2025$animal_type == "Dog"],
+                    test_2025$poor[test_2025$animal_type == "Dog"])
+auc_2025_cat <- auc(test_2025$risk[test_2025$animal_type == "Cat"],
+                    test_2025$poor[test_2025$animal_type == "Cat"])
+```
+
+```{r}
+#| echo: false
+
+score_rule_2025 <- function(is_flagged, label) {
+  tibble(rule = label,
+         flagged = sum(is_flagged),
+         share_flagged = mean(is_flagged),
+         caught = sum(is_flagged & test_2025$poor == 1),
+         share_caught = caught / sum(test_2025$poor),
+         precision = caught / flagged)
+}
+
+simple_flag_2025 <- test_2025$condition_model %in% c("Injured", "Sick or medical")
+
+risk_summary_2025 <- bind_rows(
+  score_rule_2025(simple_flag_2025, "Baseline rule: flag every injured or sick animal"),
+  score_rule_2025(test_2025$risk >= quantile(test_2025$risk, 1 - mean(simple_flag_2025)),
+                  "Model: flag the same volume of animals"),
+  score_rule_2025(test_2025$risk >= quantile(test_2025$risk, 0.95),
+                  "Model: flag top 5% highest risk"),
+  score_rule_2025(test_2025$risk >= quantile(test_2025$risk, 0.90),
+                  "Model: flag top 10% highest risk")
+)
+
+risk_summary_2025 |>
+  mutate(across(c(share_flagged, share_caught, precision),
+                \(x) scales::percent(x, accuracy = 0.1)),
+         flagged = scales::comma(flagged),
+         caught  = scales::comma(caught)) |>
+  knitr::kable(col.names = c("Triage Rule (2025–2026 Cohort)", "Animals Flagged",
+                             "Share of Intakes", "14-Day Deaths/Euth. Caught",
+                             "Recall (Share Caught)", "Precision (Share Right)"),
+               align = c("l", "r", "r", "r", "r", "r"))
+```
+
+Across **`r format(nrow(test_2025), big.mark = ",")` eligible companion-animal stays** in the post-May 2025 dataset (observed 14-day mortality rate: **`r scales::percent(mean(test_2025$poor), accuracy = 0.1)`**), the pre-2022 model achieves an overall **AUC of `r sprintf("%.2f", auc_2025)`** (**`r sprintf("%.2f", auc_2025_dog)`** for dogs and **`r sprintf("%.2f", auc_2025_cat)`** for cats). Because the newer intake system leaves `intake_health_condition` unpopulated for most arrivals (tagging only **4.9%** as injured or sick versus **14.3%** in the legacy data), overall recall at the ~5% flag tier shifts to **27.1%** for the model versus **23.0%** for the condition-only heuristic, demonstrating both the model's continued lift over baseline rules and the operational impact of intake-logging changes.
 
 ## Operational Takeaways
 
@@ -916,18 +1090,18 @@ test |>
 
 ## Limitations
 
-* **Single-shelter scope.** Findings reflect Austin Animal Center operations and municipal policies and may not generalize directly to shelters with different intake mixes or transfer networks.
-* **Approximate intake ages.** Ages are recorded in rounded whole units (`"2 years"`, `"3 weeks"`), making `age_days` an approximation.
-* **Potential missing discharge records.** Unmatched intakes within one year of the cutoff date are treated as right-censored stays still in care; a subset may reflect unrecorded exits.
-* **Sequential matching assumptions.** Pairing intakes to next outcomes assumes complete record capture; missing intermediate records could misalign multi-visit stays.
-* **2025 schema discontinuity.** Because the City of Austin overhauled its animal ID format in May 2025, legacy and modern records cannot be linked across the transition boundary.
-* **Pandemic-era structural shift.** COVID-19 sharply reduced 2020 intake volumes and altered species composition through 2024.
-* **Outcome grouping assumptions.** Combining `rto-adopt` with owner reclaims and grouping `died` with `euthanasia` simplifies analysis but merges distinct operational events.
-* **Intake-only feature horizon.** Post-arrival events—such as medical treatments, behavioral evaluations, foster placement, or promotional campaigns—are unobserved in the intake table.
-* **Competing exit pathways.** High reclaim rates for older stray dogs mechanically reduce their cumulative adoption share even when adoption demand is steady.
-* **Unrecorded sex records.** Roughly 3.5% of stays lack recorded sex at intake and were almost exclusively transferred as neonates; their adoption hazards cannot be reliably interpreted.
-* **Non-proportional hazards & cause-specific interpretation.** Time-varying effects were addressed by stratifying into stay phases; cause-specific hazard ratios reflect rates among animals still waiting rather than cumulative probabilities.
-* **Policy-driven euthanasia.** Euthanasia reflects medical severity, behavioral assessment, and shelter capacity decisions rather than purely biological risk.
+- **Single-shelter scope.** Findings reflect Austin Animal Center operations and municipal policies and may not generalize directly to shelters with different intake mixes or transfer networks.
+- **Approximate intake ages.** Ages are recorded in rounded whole units (`"2 years"`, `"3 weeks"`), making `age_days` an approximation.
+- **Potential missing discharge records.** Unmatched intakes within one year of the cutoff date are treated as right-censored stays still in care; a subset may reflect unrecorded exits.
+- **Sequential matching assumptions.** Pairing intakes to next outcomes assumes complete record capture; missing intermediate records could misalign multi-visit stays.
+- **2025 schema discontinuity.** Because the City of Austin overhauled its animal ID format in May 2025, legacy and modern records cannot be linked across the transition boundary.
+- **Pandemic-era structural shift.** COVID-19 sharply reduced 2020 intake volumes and altered species composition through 2024.
+- **Outcome grouping assumptions.** Combining `rto-adopt` with owner reclaims and grouping `died` with `euthanasia` simplifies analysis but merges distinct operational events.
+- **Intake-only feature horizon.** Post-arrival events—such as medical treatments, behavioral evaluations, foster placement, or promotional campaigns—are unobserved in the intake table.
+- **Competing exit pathways.** High reclaim rates for older stray dogs mechanically reduce their cumulative adoption share even when adoption demand is steady.
+- **Unrecorded sex records.** Roughly 3.5% of stays lack recorded sex at intake and were almost exclusively transferred as neonates; their adoption hazards cannot be reliably interpreted.
+- **Non-proportional hazards & cause-specific interpretation.** Time-varying effects were addressed by stratifying into stay phases; cause-specific hazard ratios reflect rates among animals still waiting rather than cumulative probabilities.
+- **Policy-driven euthanasia.** Euthanasia reflects medical severity, behavioral assessment, and shelter capacity decisions rather than purely biological risk.
 
 ---
 
@@ -936,6 +1110,8 @@ test |>
 ### Raw File Structure
 
 ```{r}
+#| code-summary: "Show R code: inspect raw dataset schemas"
+
 glimpse(intakes_old)
 glimpse(outcomes_old)
 glimpse(intakes_new)
@@ -947,6 +1123,8 @@ glimpse(outcomes_new)
 All missing date counts should equal `0`, with legacy records spanning October 2013 through May 2025.
 
 ```{r}
+#| code-summary: "Show R code: verify date ranges and missingness"
+
 sum(is.na(intakes_old$intake_date))
 sum(is.na(outcomes_old_clean$outcome_date))
 range(intakes_old$intake_date)
@@ -957,6 +1135,8 @@ intakes_old |> count(year = year(intake_date))
 ### Outcome Categories & Cutoff Verification
 
 ```{r}
+#| code-summary: "Show R code: inspect raw outcome labels and file end dates"
+
 outcomes_all |> count(outcome_type, sort = TRUE)
 
 # Confirm end dates of legacy intake and outcome files
@@ -969,6 +1149,8 @@ max(outcomes_all$outcome_date)
 Negative stay lengths would indicate discharge dates preceding arrival dates and should equal `0`.
 
 ```{r}
+#| code-summary: "Show R code: verify stay lengths and open records"
+
 stays |>
   count(still_in_shelter)
 
@@ -986,6 +1168,8 @@ stays |>
 ### Unmatched Stays Breakdown
 
 ```{r}
+#| code-summary: "Show R code: inspect unmatched intakes and long-stay shares"
+
 # 1. Wait duration for unmatched intakes
 stays |>
   filter(still_in_shelter) |>
@@ -1011,6 +1195,8 @@ stays |>
 ### Cleaned Outcome Counts
 
 ```{r}
+#| code-summary: "Show R code: summarize cleaned outcome groups"
+
 stays_clean |>
   count(outcome_group, sort = TRUE)
 
@@ -1024,6 +1210,8 @@ stays_clean |>
 Among dogs and cats, 68% of euthanasia cases were recorded under `"Suffering"`, and roughly three-quarters of natural deaths occurred while in shelter or foster care.
 
 ```{r}
+#| code-summary: "Show R code: inspect death and euthanasia subtypes"
+
 outcomes_old |>
   filter(animal_type %in% c("Dog", "Cat"),
          str_to_lower(outcome_type) %in% c("died", "euthanasia")) |>
@@ -1033,6 +1221,8 @@ outcomes_old |>
 ### Intake Feature Distributions
 
 ```{r}
+#| code-summary: "Show R code: inspect intake feature distributions and mortality rates"
+
 summary(stays_clean$age_days)
 stays_clean |> count(sex, fixed)
 stays_clean |> count(has_own_name)
@@ -1042,9 +1232,7 @@ stays_clean |> count(intake_condition, sort = TRUE)
 
 stays_clean |> count(condition_group)
 stays_clean |> count(age_group)
-```
 
-```{r}
 stays_clean |>
   filter(outcome_group != "Unknown outcome") |>
   group_by(animal_type, condition_group) |>
@@ -1053,9 +1241,7 @@ stays_clean |>
             .groups = "drop") |>
   mutate(share_died_euth = scales::percent(share_died_euth, accuracy = 0.1)) |>
   arrange(condition_group, animal_type)
-```
 
-```{r}
 stays_clean |>
   filter(intake_year %in% 2014:2024) |>
   count(intake_year, animal_type) |>
@@ -1065,6 +1251,8 @@ stays_clean |>
 ### Profile of Stays with Unrecorded Sex
 
 ```{r}
+#| code-summary: "Show R code: inspect outcomes and ages for unrecorded-sex stays"
+
 stays_model |>
   filter(sex_fixed == "unknown unknown") |>
   count(animal_type, outcome_group, sort = TRUE)
@@ -1077,6 +1265,8 @@ stays_model |>
 ### Model Checks: Events per Subgroup
 
 ```{r}
+#| code-summary: "Show R code: verify events per subgroup"
+
 stays_model |>
   group_by(animal_type, condition_model) |>
   summarise(stays = n(),
@@ -1093,6 +1283,8 @@ stays_model |>
 Because large sample sizes yield statistically significant $p$-values even for minor deviations, smoothed Schoenfeld residual plots are inspected alongside global $\chi^2$ tests. Sloping curves confirm time-varying effects, motivating the piecewise phase models in the main text.
 
 ```{r}
+#| code-summary: "Show R code: run Schoenfeld proportional hazards diagnostics"
+
 fit_zph_cat <- coxph(Surv(los_days, outcome_group == "Adopted") ~
                        age_group + condition_model + sex_fixed +
                        intake_type + has_own_name + era, data = cats)
@@ -1115,10 +1307,13 @@ zph_table <- function(z) {
 **Cats: Adoption Model Schoenfeld Test**
 
 ```{r}
+#| echo: false
+
 zph_table(zph_cat)
 ```
 
 ```{r}
+#| echo: false
 #| fig-height: 6
 #| fig-cap: "Smoothed Schoenfeld residuals over time for the feline adoption model. Non-flat trajectories indicate time-varying covariate effects."
 
@@ -1129,10 +1324,13 @@ for (i in 1:6) plot(zph_cat, var = i, resid = FALSE)
 **Dogs: Adoption Model Schoenfeld Test**
 
 ```{r}
+#| echo: false
+
 zph_table(zph_dog)
 ```
 
 ```{r}
+#| echo: false
 #| fig-height: 6
 #| fig-cap: "Smoothed Schoenfeld residuals over time for the canine adoption model. Non-flat trajectories indicate time-varying covariate effects."
 
@@ -1145,6 +1343,8 @@ for (i in 1:6) plot(zph_dog, var = i, resid = FALSE)
 **Adoption Hazard Ratios (95% CI) by Stay Phase**
 
 ```{r}
+#| echo: false
+
 hr_windows |>
   mutate(result = sprintf("%.2f (%.2f to %.2f)", estimate, conf.low, conf.high)) |>
   select(species, label, window, result) |>
@@ -1157,6 +1357,8 @@ hr_windows |>
 **Death or Euthanasia Hazard Ratios (95% CI) by Stay Phase**
 
 ```{r}
+#| echo: false
+
 hr_death_windows |>
   mutate(result = sprintf("%.2f (%.2f to %.2f)", estimate, conf.low, conf.high)) |>
   select(species, label, window, result) |>
